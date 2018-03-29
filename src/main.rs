@@ -164,9 +164,9 @@ fn main() {
                         (DVR a _ a _ &)
                         (DVR b _ b _ &)
                         (LVR b)
-                        (LVR a)
-                        (CNV _ 1 _ Str)
-                        (CAT _ 2)
+                        // (LVR a)
+                        // (CNV _ 1 _ Str)
+                        // (CAT _ 2)
                         (DSP)
                         (PPS)
                     }

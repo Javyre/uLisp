@@ -15,7 +15,7 @@ pub struct Registers {
 }
 
 #[repr(u8)] // actually u6
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum OpCode {
      PSS,
      PPS,
@@ -36,7 +36,7 @@ pub enum OpCode {
 }
 
 // TODO: make Op compact and outputtable
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Op {
     pub opcode: OpCode, // u6
     pub ident:  Option<IdentID>,
@@ -47,7 +47,7 @@ pub struct Op {
 }
 
 #[repr(u8)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Type {
     Insts,
     Inst,
@@ -93,11 +93,15 @@ pub struct Bin {
     consts: Vec<MemData>, // for now its a simple vec
 }
 
+pub struct Job {
+
+}
+
 pub struct VM {
     // registers: (MemData, MemData, MemData),
-    registers: Registers,
-    memory:  RefCell<Memory>,
-    // jobs: Vec<Job>,
+    // registers: Registers,
+    memory:  Memory,
+    jobs: Vec<Job>,
 }
 
 impl Registers {
@@ -214,62 +218,52 @@ impl Bin {
 
 }
 
-impl VM {
-    pub fn new() -> Self{
-        Self {
-            registers: Registers::new(),
-            memory: RefCell::new(Memory::new()),
-            // jobs: vec![],
-        }
+impl Job {
+    pub fn call(&mut self, mem: &mut Memory, id: &IdentID) -> MemData {
+        // FIXME: shouldn't be cloning here
+        let insts = mem.get(0, id).unwrap().as_instructions().unwrap().clone();
+
+        mem.push_scope();
+        let r = self.execute(mem, 1, &insts);
+        mem.pop_scope();
+
+        r
     }
 
-    // return IdentID of the function representing the bin
-    pub fn load(&mut self, bin: Bin) -> IdentID {
-        let (mut insts, consts) = bin.unpack();
-        let const_ofs = self.memory.borrow().load_consts(consts);
+    pub fn execute(
+        &mut self, mem: &mut Memory, mut scope: usize,
+        insts: &Instructions) -> MemData {
 
-        insts.apply_const_offset(const_ofs);
-        let id = self.memory.borrow().generate_ident_id(0);
-        self.memory.borrow_mut().define(0, id, MemData::Insts(insts));
-
-        id
-    }
-
-    pub fn call(&mut self, id: &IdentID) -> MemData {
-        let insts = self.memory.borrow().get(0, id).unwrap().as_instructions().unwrap();
-
-        self.execute(1, insts)
-    }
-
-    pub fn execute(&mut self, mut scope: usize, insts: &Instructions) -> MemData {
         let mut register_stack: Vec<MemData> = Vec::new();
         // let mut scope: usize = scope;
 
         for inst in insts.iter() {
+            println!("{:?}", inst);
             match inst.opcode {
                 // OpCode::PSS => { self.memory.inc_scope(1); },
                 // OpCode::PPS => { self.memory.dec_scope(1); },
-                OpCode::PSS => { scope += 1; },
+                OpCode::PSS => { mem.push_scope(); scope += 1; },
                 OpCode::PPS => { scope -= 1; },
 
                 OpCode::DFN => {
                     // let is = Instructions::new();
                 },
                 OpCode::DVR => {
-                    self.memory.borrow_mut().define(
+                    let val = inst.val.map_or_else(
+                        || register_stack.pop().unwrap(),
+                        |v| mem.get_const(&v).unwrap().clone(),
+                        );
+                    mem.define(
                         scope,
                         inst.ident.unwrap(),
-                        inst.val.map_or_else(
-                            || register_stack.pop().unwrap(),
-                            |v| self.memory.borrow().get_const(&v).unwrap().clone(),
-                            )
+                        val,
                         )
                 },
                 OpCode::LVR => {
                     register_stack.push(
                         inst.val.map_or_else(
-                            || self.memory.borrow().get(scope, &inst.ident.unwrap()).unwrap().clone(),
-                            |v| self.memory.borrow().get_const(&v).unwrap().clone(),
+                            || mem.get(scope, &inst.ident.unwrap()).unwrap().clone(),
+                            |v| mem.get_const(&v).unwrap().clone(),
                             )
                         )
                 },
@@ -284,7 +278,11 @@ impl VM {
                 OpCode::MUL => { },
                 OpCode::DIV => { },
                 OpCode::DSP => {
-                    println!("{}", register_stack.pop().unwrap().as_string().unwrap());
+                    let a = register_stack.pop().unwrap();
+
+                    let a = a.as_string().unwrap();
+
+                    println!("{}", a);
                     register_stack.push(MemData::Nil);
                 },
 
@@ -294,4 +292,31 @@ impl VM {
         assert_eq!(register_stack.len(), 1);
         register_stack.pop().unwrap()
     }
+}
+
+impl VM {
+    pub fn new() -> Self{
+        Self {
+            //registers: Registers::new(),
+            memory: Memory::new(),
+            jobs: vec![Job {}],
+        }
+    }
+
+    // return IdentID of the function representing the bin
+    pub fn load(&mut self, bin: Bin) -> IdentID {
+        let (mut insts, consts) = bin.unpack();
+        let const_ofs = self.memory.load_consts(consts);
+
+        insts.apply_const_offset(const_ofs);
+        let id = self.memory.generate_ident_id(0);
+        self.memory.define(0, id, MemData::Insts(insts));
+
+        id
+    }
+
+    pub fn call(&mut self, id: &IdentID) -> MemData {
+        self.jobs[0].call(&mut self.memory, id)
+    }
+
 }

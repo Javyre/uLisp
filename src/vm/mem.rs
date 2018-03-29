@@ -23,6 +23,14 @@ impl Memory {
         }
     }
 
+    pub fn push_scope(&mut self) {
+        self.data.push(HashMap::new())
+    }
+
+    pub fn pop_scope(&mut self) {
+        self.data.pop();
+    }
+
     pub fn load_consts(&mut self, mut consts: Vec<MemData>) -> usize {
         let r = self.consts.len();
         self.consts.append(&mut consts);
