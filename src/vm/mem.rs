@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::{
     // ConstData,
     MemData,
-    Instructions,
+    // Instructions,
     IdentID,
     ConstID,
 };
@@ -48,12 +48,9 @@ impl Memory {
 
     pub fn get(&self, scope: usize, ident: &IdentID) -> Option<&MemData> {
         let mut r: Option<&MemData> = None;
-        // let mut scope = self.scope + 1;
-        let mut scope = scope + 1;
-        while r.is_none() {
-            scope -= 1;
-            if scope < 0 { break; }
+        for scope in (0..scope+1).rev() {
             r = self.data[scope].get(ident);
+            if r.is_some() { break; }
         }
 
         r

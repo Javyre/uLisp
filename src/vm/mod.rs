@@ -10,11 +10,12 @@ pub type ConstID = u16;
 pub type IdentID = u16;
 pub type Quantif = u32; // Actually u18
 
-pub struct Registers {
-    args: LinkedList<MemData>,
-    rets: LinkedList<MemData>,
-}
+// pub struct Registers {
+//     args: LinkedList<MemData>,
+//     rets: LinkedList<MemData>,
+// }
 
+#[allow(dead_code)]
 #[repr(u8)] // actually u6
 #[derive(Debug, Clone)]
 pub enum OpCode {
@@ -47,8 +48,9 @@ pub struct Op {
     pub mute:   bool,
 }
 
+#[allow(dead_code)]
 #[repr(u8)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum Type {
     Insts,
     Inst,
@@ -71,7 +73,8 @@ pub enum Type {
 //     Nil,
 // }
 
-#[derive(Clone)]
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
 pub enum MemData {
     Insts(Instructions),
     Inst(Op),
@@ -83,7 +86,7 @@ pub enum MemData {
     Nil,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Instructions {
     insts: Vec<Op>
 }
@@ -105,24 +108,6 @@ pub struct VM {
     jobs: Vec<Job>,
 }
 
-impl Registers {
-    pub fn new() -> Self {
-        Self {
-            args: LinkedList::new(),
-            rets: LinkedList::new(),
-        }
-    }
-
-    pub fn args_to_rets(&mut self, n: usize) {
-        self.rets.append(&mut self.args.split_off(n))
-    }
-
-    pub fn rets_to_args(&mut self, n: usize) {
-        self.args.append(&mut self.rets.split_off(n))
-    }
-}
-
-
 impl Op {
     pub fn new(
         opcode: OpCode,
@@ -142,30 +127,11 @@ impl Op {
         }
     }
 
-    pub fn into_raw(self) -> MemData {
-        unimplemented!()
-    }
-
     // NOTE: ConstID + ofs > u16 = undefined behaviour!!!
     pub fn apply_const_offset(&mut self, ofs: usize) {
         self.val.map(|cid| cid + ofs as u16); // TODO: make offset actually be able to be usize
     }
 }
-
-
-// impl Into<Vec<MemData>> for Vec<ConstData> {
-//     fn into(self) -> MemData {
-//         match self {
-//             ConstData::Inst(x) => MemData::Inst(x),
-//             ConstData::Str(x) => MemData::Str(x),
-//             ConstData::Pair { car, cdr } => MemData::Pair { car: Box::new(), cdr: Box::new() },
-//             ConstData::Int(x)  => MemData::Int(x),
-//             ConstData::Char(x) => MemData::Char(x),
-//             ConstData::Bool(x) => MemData::Bool(x),
-//             ConstData::Nil => MemData::Nil,
-//         }
-//     }
-// }
 
 impl MemData {
     pub fn as_instructions(&self) -> Option<&Instructions> {
@@ -183,13 +149,22 @@ impl MemData {
             None
         }
     }
+
+    pub fn convert(self, typ: &Type) -> Self {
+        match *typ {
+            Type::Str => {
+                MemData::Str(
+                    match self {
+                        MemData::Int(i) => format!("{:?}", i),
+                        _ => format!("{:?}", self),
+                    })
+            },
+            _ => { self }
+        }
+    }
 }
 
 impl Instructions {
-    pub fn into_raw(self) -> Vec<MemData> {
-        return self.insts.into_iter().map(|i| i.into_raw()).collect()
-    }
-
     pub fn apply_const_offset(&mut self, ofs: usize) {
         self.insts.iter_mut().for_each(|i: &mut Op| i.apply_const_offset(ofs));
     }
@@ -224,7 +199,7 @@ impl Job {
         let mem = self.mem.clone();
 
         // FIXME: shouldn't be cloning here
-        let insts = mem.borrow().get(0, id).unwrap().as_instructions().unwrap().clone();
+        let insts = mem.borrow().get(0, id).expect("Fetching instructions in scope").as_instructions().unwrap().clone();
 
         mem.borrow_mut().push_scope();
         let r = self.execute(1, &insts);
@@ -238,7 +213,7 @@ impl Job {
         insts: &Instructions) -> MemData {
 
         let mem = &self.mem;
-        let mut register_stack: Vec<MemData> = Vec::new();
+        let mut register_stack: LinkedList<MemData> = LinkedList::new();
         // let mut scope: usize = scope;
 
         for inst in insts.iter() {
@@ -246,34 +221,71 @@ impl Job {
             match inst.opcode {
                 // OpCode::PSS => { self.memory.inc_scope(1); },
                 // OpCode::PPS => { self.memory.dec_scope(1); },
-                OpCode::PSS => { mem.borrow_mut().push_scope(); scope += 1; },
-                OpCode::PPS => { scope -= 1; },
+
+                // FIXME: PSS & PPS should push and pop scope with
+                // some id or something for scope
+                OpCode::PSS => {
+                    mem.borrow_mut().push_scope(); scope += 1;
+                },
+                OpCode::PPS => {
+                    mem.borrow_mut().pop_scope(); scope -= 1;
+                },
 
                 OpCode::DFN => {
                     // let is = Instructions::new();
                 },
                 OpCode::DVR => {
                     let val = inst.val.map_or_else(
-                        || register_stack.pop().unwrap(),
+                        || register_stack.pop_back().unwrap(),
                         |v| mem.borrow().get_const(&v).unwrap().clone(),
                         );
-                    mem.borrow_mut().define(
-                        scope,
-                        inst.ident.unwrap(),
-                        val,
-                        )
+                    mem.borrow_mut().define(scope,
+                                            inst.ident.unwrap(),
+                                            val)
                 },
                 OpCode::LVR => {
-                    register_stack.push(
+                    register_stack.push_back(
                         inst.val.map_or_else(
-                            || mem.borrow().get(scope, &inst.ident.unwrap()).unwrap().clone(),
-                            |v| mem.borrow().get_const(&v).unwrap().clone(),
+                            || mem.borrow()
+                                  .get(scope, &inst.ident.unwrap())
+                                  .unwrap().clone(),
+                            |v| mem.borrow()
+                                   .get_const(&v)
+                                   .unwrap().clone(),
                             )
                         )
                 },
                 OpCode::CLL => { },
-                OpCode::CNV => { },
-                OpCode::CAT => { },
+                OpCode::CNV => {
+                    let vals = inst.ident
+                                   .map_or_else(
+                                       || {
+                                           let n = register_stack.len() - inst.n.unwrap() as usize;
+                                           register_stack.split_off(n)
+                                       },
+                                       |i| {
+                                           let mut ll = LinkedList::new();
+                                           ll.push_back(mem.borrow().get(scope, &i).unwrap().clone());
+                                           ll
+                                       })
+                                   .into_iter()
+                                   .map(|v| v.convert(&inst.typ.unwrap()));
+                    register_stack.extend(vals)
+                },
+                OpCode::CAT => {
+                    let n = register_stack.len() - inst.n.unwrap() as usize;
+                    let val = register_stack
+                        .split_off(n)
+                        .into_iter()
+                        .fold(
+                            MemData::Str("".to_owned()),
+                            |a, s| MemData::Str(format!(
+                                    "{}{}",
+                                    a.as_string().unwrap(),
+                                    s.as_string().unwrap())
+                                ));
+                    register_stack.push_back(val)
+                },
                 OpCode::CNS => { },
                 OpCode::CAR => { },
                 OpCode::CDR => { },
@@ -282,19 +294,19 @@ impl Job {
                 OpCode::MUL => { },
                 OpCode::DIV => { },
                 OpCode::DSP => {
-                    let a = register_stack.pop().unwrap();
+                    let a = register_stack.pop_back().unwrap();
 
                     let a = a.as_string().unwrap();
 
                     println!("{}", a);
-                    register_stack.push(MemData::Nil);
+                    register_stack.push_back(MemData::Nil);
                 },
 
             }
         }
 
         assert_eq!(register_stack.len(), 1);
-        register_stack.pop().unwrap()
+        register_stack.pop_back().unwrap()
     }
 }
 
