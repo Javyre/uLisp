@@ -4,6 +4,7 @@ mod mem;
 
 use self::mem::*;
 use std::cell::{RefCell};
+use std::rc::Rc;
 
 pub type ConstID = u16;
 pub type IdentID = u16;
@@ -94,13 +95,13 @@ pub struct Bin {
 }
 
 pub struct Job {
-
+    mem: Rc<RefCell<Memory>>,
 }
 
 pub struct VM {
     // registers: (MemData, MemData, MemData),
     // registers: Registers,
-    memory:  Memory,
+    memory:  Rc<RefCell<Memory>>,
     jobs: Vec<Job>,
 }
 
@@ -219,21 +220,24 @@ impl Bin {
 }
 
 impl Job {
-    pub fn call(&mut self, mem: &mut Memory, id: &IdentID) -> MemData {
-        // FIXME: shouldn't be cloning here
-        let insts = mem.get(0, id).unwrap().as_instructions().unwrap().clone();
+    pub fn call(&mut self, id: &IdentID) -> MemData {
+        let mem = self.mem.clone();
 
-        mem.push_scope();
-        let r = self.execute(mem, 1, &insts);
-        mem.pop_scope();
+        // FIXME: shouldn't be cloning here
+        let insts = mem.borrow().get(0, id).unwrap().as_instructions().unwrap().clone();
+
+        mem.borrow_mut().push_scope();
+        let r = self.execute(1, &insts);
+        mem.borrow_mut().pop_scope();
 
         r
     }
 
     pub fn execute(
-        &mut self, mem: &mut Memory, mut scope: usize,
+        &mut self, mut scope: usize,
         insts: &Instructions) -> MemData {
 
+        let mem = &self.mem;
         let mut register_stack: Vec<MemData> = Vec::new();
         // let mut scope: usize = scope;
 
@@ -242,7 +246,7 @@ impl Job {
             match inst.opcode {
                 // OpCode::PSS => { self.memory.inc_scope(1); },
                 // OpCode::PPS => { self.memory.dec_scope(1); },
-                OpCode::PSS => { mem.push_scope(); scope += 1; },
+                OpCode::PSS => { mem.borrow_mut().push_scope(); scope += 1; },
                 OpCode::PPS => { scope -= 1; },
 
                 OpCode::DFN => {
@@ -251,9 +255,9 @@ impl Job {
                 OpCode::DVR => {
                     let val = inst.val.map_or_else(
                         || register_stack.pop().unwrap(),
-                        |v| mem.get_const(&v).unwrap().clone(),
+                        |v| mem.borrow().get_const(&v).unwrap().clone(),
                         );
-                    mem.define(
+                    mem.borrow_mut().define(
                         scope,
                         inst.ident.unwrap(),
                         val,
@@ -262,8 +266,8 @@ impl Job {
                 OpCode::LVR => {
                     register_stack.push(
                         inst.val.map_or_else(
-                            || mem.get(scope, &inst.ident.unwrap()).unwrap().clone(),
-                            |v| mem.get_const(&v).unwrap().clone(),
+                            || mem.borrow().get(scope, &inst.ident.unwrap()).unwrap().clone(),
+                            |v| mem.borrow().get_const(&v).unwrap().clone(),
                             )
                         )
                 },
@@ -296,27 +300,28 @@ impl Job {
 
 impl VM {
     pub fn new() -> Self{
+        let mem = Rc::new(RefCell::new(Memory::new()));
         Self {
             //registers: Registers::new(),
-            memory: Memory::new(),
-            jobs: vec![Job {}],
+            memory: mem.clone(),
+            jobs: vec![Job { mem }],
         }
     }
 
     // return IdentID of the function representing the bin
     pub fn load(&mut self, bin: Bin) -> IdentID {
         let (mut insts, consts) = bin.unpack();
-        let const_ofs = self.memory.load_consts(consts);
+        let const_ofs = self.memory.borrow_mut().load_consts(consts);
 
         insts.apply_const_offset(const_ofs);
-        let id = self.memory.generate_ident_id(0);
-        self.memory.define(0, id, MemData::Insts(insts));
+        let id = self.memory.borrow_mut().generate_ident_id(0);
+        self.memory.borrow_mut().define(0, id, MemData::Insts(insts));
 
         id
     }
 
     pub fn call(&mut self, id: &IdentID) -> MemData {
-        self.jobs[0].call(&mut self.memory, id)
+        self.jobs[0].call(id)
     }
 
 }
