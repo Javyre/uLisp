@@ -1,28 +1,8 @@
-// #![recursion_limit="128"]
+use vm;
+use vm::*;
 
-#[macro_use]
-mod vm;
-
-#[cfg(test)]
-mod tests;
-
-
-#[allow(unused_imports)]
-use vm::{
-    Op,
-    OpCode,
-    Type,
-    // Instructions,
-    Bin,
-    IdentID,
-    ConstID,
-    Quantif,
-    MemData,
-    // ConstData,
-};
-
-fn main() {
-    // TODO: implement lisp!
+#[test]
+fn prg0() {
     let mut lisp: vm::VM = vm::VM::new();
 
     /*
@@ -66,4 +46,3 @@ fn main() {
 
     let _ = lisp.call(&id).unwrap();
 }
-

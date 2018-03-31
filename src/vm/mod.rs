@@ -1,5 +1,8 @@
 use std::collections::LinkedList;
 
+#[macro_use]
+pub mod macros;
+
 mod mem;
 mod data;
 mod err;
