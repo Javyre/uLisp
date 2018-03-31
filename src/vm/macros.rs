@@ -1,64 +1,34 @@
 
 /// (OpCode ident n val typ [mute])
 macro_rules! op {
-    (@inst [$($done:expr),*]  $ident:ident $($rest:tt)*) => {
-        op!(@ident [ $($done,)* OpCode::$ident ] $($rest)*)
-    };
-
-    (@ident [$($done:expr),*] ) => {
-        op!(@ident [ $($done),* ] _ )
-    };
-    (@ident [$($done:expr),*] _ $($rest:tt)*) => {
-        op!(@n [ $($done,)* None ] $($rest)*)
-    };
-    (@ident [$($done:expr),*]  $ident:ident $($rest:tt)*) => {
-        op!(@n [ $($done,)* Some(___BinIdent::$ident as IdentID) ] $($rest)*)
-    };
-
-    (@n [$($done:expr),*] ) => {
-        op!(@n [ $($done),* ] _ )
-    };
-    (@n [$($done:expr),*] _ $($rest:tt)*) => {
-        op!(@val [ $($done,)* None ] $($rest)*)
-    };
-    (@n [$($done:expr),*]  $n:tt $($rest:tt)*) => {
-        op!(@val [ $($done,)* Some($n as Quantif) ] $($rest)*)
-    };
-
-    (@val [$($done:expr),*] ) => {
-        op!(@val [ $($done),* ] _ )
-    };
-    (@val [$($done:expr),*] _ $($rest:tt)*) => {
-        op!(@typ [ $($done,)* None ] $($rest)*)
-    };
-    (@val [$($done:expr),*]  $val:ident $($rest:tt)*) => {
-        op!(@typ [ $($done,)* Some(___BinConst::$val as ConstID) ] $($rest)*)
-    };
-
-    (@typ [$($done:expr),*] ) => {
-        op!(@typ [ $($done),* ] _ )
-    };
-    (@typ [$($done:expr),*] _ $($rest:tt)*) => {
-        op!(@mute [ $($done,)* None ] $($rest)*)
-    };
-    (@typ [$($done:expr),*]  $typ:ident $($rest:tt)*) => {
-        op!(@mute [ $($done,)* Some(Type::$typ) ] $($rest)*)
-    };
-
-    (@mute [$($done:expr),*] ) => {
-        op!(@end $($done,)* false )
-    };
-    (@mute [$($done:expr),*] & ) => {
-        op!(@end $($done,)* true )
-    };
-
-    (@end $($args:expr),*) => {
-        Op::new($($args),*)
-    };
-
     ($($rest:tt)*) => {
-        op!(@inst [] $($rest)*)
-    }
+        _op!(@i $($rest)*)
+    };
+}
+
+macro_rules! _op {
+    (@i $inst:ident $($rest:tt)*) => {
+        _op!(@a [$crate::vm::OpCode::$inst, None, None, None, None, false] $($rest)*)
+    };
+    (@a [$inst:expr, $a:expr, $b:expr, $c:expr, $d:expr, $e:expr] $ident:ident $($rest:tt)*) => {
+        _op!(@a [$inst, Some(___BinIdent::$ident as $crate::vm::IdentID), $b, $c, $d, $e] $($rest)*)
+    };
+    (@a [$inst:expr, $a:expr, $b:expr, $c:expr, $d:expr, $e:expr] ($n:expr) $($rest:tt)*) => {
+        _op!(@a [$inst, $a, Some($n as $crate::vm::Quantif), $c, $d, $e] $($rest)*)
+    };
+    (@a [$inst:expr, $a:expr, $b:expr, $c:expr, $d:expr, $e:expr] #$const:ident $($rest:tt)*) => {
+        _op!(@a [$inst, $a, $b, Some(___BinConst::$const as $crate::vm::ConstID), $d, $e] $($rest)*)
+    };
+    (@a [$inst:expr, $a:expr, $b:expr, $c:expr, $d:expr, $e:expr] :$typ:ident $($rest:tt)*) => {
+        _op!(@a [$inst, $a, $b, $c, Some($crate::vm::Type::$typ), $e] $($rest)*)
+    };
+    (@a [$inst:expr, $a:expr, $b:expr, $c:expr, $d:expr, $e:expr] & $($rest:tt)*) => {
+        _op!(@a [$inst, $a, $b, $c, $d, true] $($rest)*)
+    };
+    (@a [$inst:expr, $a:expr, $b:expr, $c:expr, $d:expr, $e:expr]) => {
+        Op::new($inst, $a, $b, $c, $d, $e)
+    };
+
 }
 
 macro_rules! instructions {
@@ -74,7 +44,7 @@ macro_rules! instructions {
 }
 
 macro_rules! consts {
-    {@const $id:ident [$($ids:ident),*] [$($vals:expr),*] ($ident:ident = $($val:tt)*) $($rest:tt)*} => {
+    {@const $id:ident [$($ids:ident),*] [$($vals:expr),*] (#$ident:ident = $($val:tt)*) $($rest:tt)*} => {
         consts!{@const $id [$($ids,)* $ident] [$($vals,)* MemData::$($val)*] $($rest)* }
     };
 
@@ -86,18 +56,21 @@ macro_rules! consts {
         let $id = vec![$($vals),*];
     };
 
-    { $ident:ident = $($rest:tt)*} => {
+    { $ident:ident = $($rest:tt)+} => {
         consts!{@const $ident [] [] $($rest)* }
     };
 
+    { $ident:ident = } => { };
 }
 
 macro_rules! idents {
-    { $($idents:ident),* } => {
+    { $($idents:ident),+ } => {
         #[allow(non_camel_case_types)]
         #[repr(u16)]
         enum ___BinIdent { $($idents),* }
-    }
+    };
+
+    {} => {};
 }
 
 
@@ -105,6 +78,7 @@ macro_rules! idents {
 macro_rules! program {
     { {$($idents:tt)*} {$($consts:tt)*} {$($instructions:tt)*} } => {
         {
+            let ___bin_consts: Vec<MemData> = vec![];
             idents!{ $($idents)* };
             consts!{ ___bin_consts = $($consts)* };
 

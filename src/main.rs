@@ -46,19 +46,19 @@ fn main() {
         program! {
                     { a, b }
                     {
-                        (a = Int(10))
-                        (b = Str("abc".to_owned()))
-                        (nl = Str("\n".to_owned()))
+                        (#a = Int(10))
+                        (#b = Str("abc".to_owned()))
+                        (#nl = Str("\n".to_owned()))
                     }
                     {
                         (PSS)
-                        (DVR a _ a _ &)
-                        (DVR b _ b _ &)
+                        (DVR a #a &)
+                        (DVR b #b &)
                         (LVR b)
                         (LVR a)
-                        (CNV _ 1 _ Str)
-                        (LVR _ _ nl)
-                        (CAT _ 3)
+                        (CNV (1) :Str)
+                        (LVR #nl)
+                        (CAT (3))
                         (DSP)
                         (PPS)
                     }

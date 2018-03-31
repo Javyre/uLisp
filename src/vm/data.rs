@@ -6,7 +6,7 @@ pub type Quantif = u32; // Actually u18
 
 #[allow(dead_code)]
 #[repr(u8)] // actually u6
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum OpCode {
      PSS,
      PPS,
@@ -27,7 +27,7 @@ pub enum OpCode {
 }
 
 // TODO: make Op compact and outputtable
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Op {
     pub opcode: OpCode, // u6
     pub ident:  Option<IdentID>,
@@ -39,7 +39,7 @@ pub struct Op {
 
 #[allow(dead_code)]
 #[repr(u8)]
-#[derive(Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum Type {
     Insts,
     Inst,
@@ -63,7 +63,7 @@ pub enum Type {
 // }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum MemData {
     Insts(Instructions),
     Inst(Op),
@@ -75,7 +75,7 @@ pub enum MemData {
     Nil,
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Instructions {
     insts: Vec<Op>
 }

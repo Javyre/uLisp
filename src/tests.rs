@@ -26,23 +26,36 @@ fn prg0() {
         program! {
                     { a, b }
                     {
-                        (a = Int(10))
-                        (b = Str("abc".to_owned()))
-                        (nl = Str("\n".to_owned()))
+                        (#a = Int(10))
+                        (#b = Str("abc".to_owned()))
+                        (#nl = Str("\n".to_owned()))
                     }
                     {
                         (PSS)
-                        (DVR a _ a _ &)
-                        (DVR b _ b _ &)
+                        (DVR a #a &)
+                        (DVR b #b &)
                         (LVR b)
                         (LVR a)
-                        (CNV _ 1 _ Str)
-                        (LVR _ _ nl)
-                        (CAT _ 3)
+                        (CNV (1) :Str)
+                        (LVR #nl)
+                        (CAT (3))
                         (DSP)
                         (PPS)
                     }
         });
 
-    let _ = lisp.call(&id).unwrap();
+    assert_eq!(lisp.call(&id).unwrap(), MemData::Nil);
+}
+
+#[test]
+fn prg1() {
+    let mut lisp: vm::VM = vm::VM::new();
+    let id = lisp.load(
+        program! {
+                    { }
+                    { (#a = Int(9) )}
+                    { (LVR #a) }
+        });
+
+    assert_eq!(lisp.call(&id).unwrap(), MemData::Int(9))
 }
