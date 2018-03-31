@@ -1,3 +1,5 @@
+use super::Error;
+
 pub type ConstID = u16;
 pub type IdentID = u16;
 pub type Quantif = u32; // Actually u18
@@ -111,32 +113,52 @@ impl Op {
 }
 
 impl MemData {
-    pub fn as_instructions(&self) -> Option<&Instructions> {
+    pub fn get_type(&self) -> Type {
+        match *self {
+            MemData::Insts(..) => Type::Insts,
+            MemData::Inst(..)  => Type::Inst,
+            MemData::Str(..)   => Type::Str,
+            MemData::Pair {..} => Type::Pair,
+            MemData::Int(..)   => Type::Int,
+            MemData::Char(..)  => Type::Char,
+            MemData::Bool(..)  => Type::Bool,
+            MemData::Nil       => Type::Nil,
+        }
+    }
+
+    #[inline]
+    fn wrong_type(&self, wanted: Type) -> Error {
+        Error::TypeError(wanted, self.get_type())
+    }
+
+    pub fn as_instructions(&self) -> Result<&Instructions, Error> {
         if let &MemData::Insts(ref i) = self {
-            Some(&i)
+            Ok(&i)
         } else {
-            None
+            Err(self.wrong_type(Type::Insts))
         }
     }
 
-    pub fn as_string(&self) -> Option<&String> {
+    pub fn as_string(&self) -> Result<&String, Error> {
         if let &MemData::Str(ref s) = self {
-            Some(&s)
+            Ok(&s)
         } else {
-            None
+            Err(self.wrong_type(Type::Str))
         }
     }
 
-    pub fn convert(self, typ: &Type) -> Self {
+    pub fn convert(&self, typ: &Type) -> Result<Self, Error> {
         match *typ {
             Type::Str => {
-                MemData::Str(
-                    match self {
+                Ok(MemData::Str(
+                    match *self {
                         MemData::Int(i) => format!("{:?}", i),
                         _ => format!("{:?}", self),
-                    })
+                    }))
             },
-            _ => { self }
+            _ => {
+                Err(Error::IllegalConversion(self.get_type(), typ.clone()))
+            }
         }
     }
 }

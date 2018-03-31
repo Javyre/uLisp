@@ -118,6 +118,7 @@ macro_rules! program {
     }
 }
 
+#[allow(unused_imports)]
 use vm::{
     Op,
     OpCode,
@@ -158,6 +159,7 @@ fn main() {
                     {
                         (a = Int(10))
                         (b = Str("abc".to_owned()))
+                        (nl = Str("\n".to_owned()))
                     }
                     {
                         (PSS)
@@ -166,12 +168,13 @@ fn main() {
                         (LVR b)
                         (LVR a)
                         (CNV _ 1 _ Str)
-                        (CAT _ 2)
+                        (LVR _ _ nl)
+                        (CAT _ 3)
                         (DSP)
                         (PPS)
                     }
         });
 
-    let _ = lisp.call(&id);
+    let _ = lisp.call(&id).unwrap();
 }
 

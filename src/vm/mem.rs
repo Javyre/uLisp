@@ -6,6 +6,7 @@ use super::{
     // Instructions,
     IdentID,
     ConstID,
+    Error,
 };
 
 pub struct Memory {
@@ -27,8 +28,8 @@ impl Memory {
         self.data.push(HashMap::new())
     }
 
-    pub fn pop_scope(&mut self) {
-        self.data.pop();
+    pub fn pop_scope(&mut self) -> Result<(), Error> {
+        self.data.pop().map_or_else(|| Err(Error::IllegalStackPop), |_| Ok(()))
     }
 
     pub fn load_consts(&mut self, mut consts: Vec<MemData>) -> usize {
@@ -46,18 +47,21 @@ impl Memory {
         self.data[scope].insert(ident, val);
     }
 
-    pub fn get(&self, scope: usize, ident: &IdentID) -> Option<&MemData> {
+    pub fn get(&self, scope: usize, ident: &IdentID) -> Result<&MemData, Error> {
         let mut r: Option<&MemData> = None;
         for scope in (0..scope+1).rev() {
             r = self.data[scope].get(ident);
             if r.is_some() { break; }
         }
 
-        r
+        r.map_or_else(|| Err(Error::VariableNotFound(scope, *ident)), |r| Ok(r))
     }
 
-    pub fn get_const(&self, constid: &ConstID) -> Option<&MemData> {
-        self.consts.get(*constid as usize)
+    pub fn get_const(&self, constid: &ConstID) -> Result<&MemData, Error> {
+        self.consts
+            .get(*constid as usize)
+            .map_or_else(|| Err(Error::ConstantNotFound(*constid)),
+                         |r| Ok(r))
     }
 
     // pub fn inc_scope(&mut self, n: usize) { self.scope += n; }
