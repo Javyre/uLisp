@@ -35,6 +35,8 @@ pub enum Error {
     IllegalStackPop,
     IllegalRegisterPop,
     IllegalConversion(Type, Type),
+    RuntimeErrorInSubJob(Box<RuntimeError>),
+    BadOperandTypes(&'static str, Type, Type),
 }
 
 impl fmt::Display for Error {
@@ -52,6 +54,10 @@ impl fmt::Display for Error {
                 write!(f, "illegal register stack pop: not enough items in register stack to pop!"),
             Error::IllegalConversion(ref a, ref b) =>
                 write!(f, "illegal conversion target: from `{:?}` to `{:?}`", a, b),
+            Error::RuntimeErrorInSubJob(ref e) =>
+                write!(f, "runtime error occured while running a subjob: {}", e),
+            Error::BadOperandTypes(ref o, ref a, ref b) =>
+                write!(f, "bad operand types: attemped `{}` on types `{:?}` and `{:?}`", o, a, b),
         }
     }
 }
@@ -64,7 +70,9 @@ impl ::std::error::Error for Error {
             Error::ConstantNotFound(..)  => "constant not found",
             Error::IllegalStackPop       => "illegal stack frame pop",
             Error::IllegalRegisterPop    => "illegal register stack pop",
-            Error::IllegalConversion(..) => "illegal conversion target"
+            Error::IllegalConversion(..) => "illegal conversion target",
+            Error::RuntimeErrorInSubJob(..) => "runtime error occured while running a subjob",
+            Error::BadOperandTypes(..)   => "bad operand types",
         }
     }
 }

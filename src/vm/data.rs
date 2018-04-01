@@ -10,6 +10,7 @@ pub type Quantif = u32; // Actually u18
 pub enum OpCode {
      PSS,
      PPS,
+     REC,
      DFN,
      DVR,
      LVR,
@@ -139,11 +140,37 @@ impl MemData {
         }
     }
 
+    pub fn as_instruction(&self) -> Result<&Op, Error> {
+        if let &MemData::Inst(ref o) = self {
+            Ok(&o)
+        } else {
+            Err(self.wrong_type(Type::Inst))
+        }
+    }
+
     pub fn as_string(&self) -> Result<&String, Error> {
         if let &MemData::Str(ref s) = self {
             Ok(&s)
         } else {
             Err(self.wrong_type(Type::Str))
+        }
+    }
+
+    pub fn into_instruction(self) -> Result<Op, (Self, Error)> {
+        if let MemData::Inst(o) = self {
+            Ok(o)
+        } else {
+            let err = self.wrong_type(Type::Inst);
+            Err((self, err))
+        }
+    }
+
+    pub fn into_pair(self) -> Result<(Box<MemData>, Box<MemData>), (Self, Error)> {
+        if let MemData::Pair { car, cdr } = self {
+            Ok((car, cdr))
+        } else {
+            let err = self.wrong_type(Type::Pair);
+            Err((self, err))
         }
     }
 
@@ -163,6 +190,74 @@ impl MemData {
     }
 }
 
+impl ::std::ops::Add for MemData {
+    type Output = Result<MemData, Error>;
+
+    fn add(self, other: Self) -> Self::Output {
+        let (a, b) = (self.get_type(), other.get_type());
+
+        // We're dissallowing inter-type operations for now at least
+        if a != b { return Err(Error::BadOperandTypes("sum", a, b)) }
+
+        if let (MemData::Int(a), MemData::Int(b)) = (self, other) {
+            return Ok(MemData::Int(a + b))
+        }
+
+        Err(Error::BadOperandTypes("sum", a, b))
+    }
+}
+
+impl ::std::ops::Sub for MemData {
+    type Output = Result<MemData, Error>;
+
+    fn sub(self, other: Self) -> Self::Output {
+        let (a, b) = (self.get_type(), other.get_type());
+
+        // We're dissallowing inter-type operations for now at least
+        if a != b { return Err(Error::BadOperandTypes("subtraction", a, b)) }
+
+        if let (MemData::Int(a), MemData::Int(b)) = (self, other) {
+            return Ok(MemData::Int(a - b))
+        }
+
+        Err(Error::BadOperandTypes("subtraction", a, b))
+    }
+}
+
+impl ::std::ops::Mul for MemData {
+    type Output = Result<MemData, Error>;
+
+    fn mul(self, other: Self) -> Self::Output {
+        let (a, b) = (self.get_type(), other.get_type());
+
+        // We're dissallowing inter-type operations for now at least
+        if a != b { return Err(Error::BadOperandTypes("multiplication", a, b)) }
+
+        if let (MemData::Int(a), MemData::Int(b)) = (self, other) {
+            return Ok(MemData::Int(a * b))
+        }
+
+        Err(Error::BadOperandTypes("multiplication", a, b))
+    }
+}
+
+impl ::std::ops::Div for MemData {
+    type Output = Result<MemData, Error>;
+
+    fn div(self, other: Self) -> Self::Output {
+        let (a, b) = (self.get_type(), other.get_type());
+
+        // We're dissallowing inter-type operations for now at least
+        if a != b { return Err(Error::BadOperandTypes("division", a, b)) }
+
+        if let (MemData::Int(a), MemData::Int(b)) = (self, other) {
+            return Ok(MemData::Int(a / b))
+        }
+
+        Err(Error::BadOperandTypes("division", a, b))
+    }
+}
+
 impl Instructions {
     pub fn apply_const_offset(&mut self, ofs: usize) {
         self.insts.iter_mut().for_each(|i: &mut Op| i.apply_const_offset(ofs));
@@ -170,6 +265,14 @@ impl Instructions {
 
     pub fn iter(&self) -> ::std::slice::Iter<Op> {
         self.insts.iter()
+    }
+}
+
+impl ::std::iter::FromIterator<Op> for Instructions {
+    fn from_iter<I: IntoIterator<Item=Op>>(iter: I) -> Self {
+        Self {
+            insts: iter.into_iter().collect()
+        }
     }
 }
 

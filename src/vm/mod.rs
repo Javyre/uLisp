@@ -23,7 +23,9 @@ use std::rc::Rc;
 pub struct Job {
     mem: Rc<RefCell<Memory>>,
     scope: usize,
+    // FIXME?: should the self.reg_stack be a Vec<&MemData> instead?
     reg_stack: LinkedList<MemData>,
+    recording: usize,
 }
 
 pub struct VM {
@@ -39,6 +41,7 @@ impl Job {
             mem,
             scope: 0,
             reg_stack: LinkedList::new(),
+            recording: 0,
         }
     }
 
@@ -60,7 +63,15 @@ impl Job {
     pub fn run_instruction(&mut self, inst: &Op) -> Result<(), Error> {
         let mem = self.mem.clone();
 
+        if self.recording > 0 {
+            self.recording -= 1;
+            self.reg_stack.push_back(MemData::Inst(inst.clone()));
+            println!("recording: {:?}", self.reg_stack.back().unwrap());
+            return Ok(());
+        }
+
         println!("{:?}", inst);
+        println!("{:?}\n", self.reg_stack);
         match inst.opcode {
             // OpCode::PSS => { self.memory.inc_scope(1); },
             // OpCode::PPS => { self.memory.dec_scope(1); },
@@ -74,8 +85,23 @@ impl Job {
                 mem.borrow_mut().pop_scope()?; self.scope -= 1;
             },
 
+            OpCode::REC => {
+                self.recording = inst.n.unwrap_or(1) as usize;
+            },
+
             OpCode::DFN => {
-                // let is = Instructions::new();
+                let n = inst.n.expect("getting quatifier");
+                let mut is: Vec<Op> = Vec::with_capacity(n as usize);
+
+                let n = self.reg_stack.len() - n as usize;
+                for v in self.reg_stack.split_off(n).into_iter() {
+                    is.push(v.into_instruction().map_err(|e| e.1)?);
+                }
+
+                mem.borrow_mut().define(self.scope,
+                                        inst.ident.expect("getting identifier"),
+                                        MemData::Insts(is.into()));
+                self.reg_stack.push_back(MemData::Nil)
             },
             OpCode::DVR => {
                 let val = inst.val.map_or_else(
@@ -84,7 +110,7 @@ impl Job {
                     |v| Ok(mem.borrow().get_const(&v)?.clone()),
                     )?;
                 mem.borrow_mut().define(self.scope,
-                                        inst.ident.expect("getting quatifier"),
+                                        inst.ident.expect("getting identifier"),
                                         val)
             },
             OpCode::LVR => {
@@ -98,7 +124,32 @@ impl Job {
                         )?
                     )
             },
-            OpCode::CLL => { },
+            OpCode::CLL => {
+                let len = self.reg_stack.len();
+                let insts = if let Some(i) = inst.ident {
+                                // FIXME: should be cloning here!!!
+                                self.mem.borrow().get(self.scope, &i)?.as_instructions()?.clone()
+                            } else {
+                                let n = inst.n.expect("getting quantifier");
+                                let mut insts = Vec::with_capacity(n as usize);
+                                let n = len - n as usize;
+                                for v in self.reg_stack.split_off(n).into_iter() {
+                                    insts.push(v.into_instruction().map_err(|e| e.1)?)
+                                }
+                                insts.into()
+                            };
+
+                mem.borrow_mut().push_scope();
+                println!("Entering subjob!");
+                let s = self.scope + 1;
+                let r = self.execute(s, &insts)
+                    .map_err(|e| Error::RuntimeErrorInSubJob(Box::new(e)))?;
+                println!("Done subjob!");
+                mem.borrow_mut().pop_scope().unwrap();
+
+                self.reg_stack.push_back(r)
+
+            },
             OpCode::CNV => {
                 let s = self.scope;
                 let vals = inst.ident
@@ -128,13 +179,65 @@ impl Job {
                 }
                 self.reg_stack.push_back(MemData::Str(val))
             },
-            OpCode::CNS => { },
-            OpCode::CAR => { },
-            OpCode::CDR => { },
-            OpCode::ADD => { },
-            OpCode::SUB => { },
-            OpCode::MUL => { },
-            OpCode::DIV => { },
+            OpCode::CNS => {
+                let n = self.reg_stack.len() - 2;
+                let mut pair = self.reg_stack.split_off(n).into_iter();
+                let car = Box::new(pair.next().unwrap());
+                let cdr = Box::new(pair.next().unwrap());
+                self.reg_stack.push_back(MemData::Pair { car, cdr })
+            },
+            OpCode::CAR | OpCode::CDR => {
+                let vals = if let Some(i) = inst.ident {
+                    let mut r = LinkedList::new();
+                    r.push_back(self.mem.borrow().get(self.scope, &i)?.clone());
+                    r
+                } else {
+                    let n = self.reg_stack.len() - inst.n.unwrap_or(1) as usize;
+                    self.reg_stack.split_off(n)
+                };
+
+                let mut r = LinkedList::new();
+                for v in vals.into_iter() {
+                    r.push_back(
+                        match inst.opcode {
+                            OpCode::CAR => {
+                                *v.into_pair().map_err(|e| e.1)?.0
+                            }
+                            OpCode::CDR | _ => {
+                                *v.into_pair().map_err(|e| e.1)?.1
+                            }
+                        }
+                        )
+                }
+
+                self.reg_stack.append(&mut r)
+            },
+
+            | OpCode::ADD | OpCode::SUB
+            | OpCode::MUL | OpCode::DIV => {
+                let vals = if let Some(i) = inst.ident {
+                    let mut r = LinkedList::new();
+                    r.push_back(self.mem.borrow().get(self.scope, &i)?.clone());
+                    r.push_back(self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?);
+                    r
+                } else {
+                    let n = self.reg_stack.len() - inst.n.unwrap_or(1) as usize;
+                    self.reg_stack.split_off(n)
+                };
+                self.reg_stack.push_back(
+                    if vals.len() == 0 {
+                        MemData::Nil
+                    } else {
+                        let mut vals = vals.into_iter();
+                        let r = vals.next().unwrap();
+                        match inst.opcode {
+                            OpCode::ADD =>     vals.fold(Ok(r), |a, v| Ok((a? + v)?) )?,
+                            OpCode::SUB =>     vals.fold(Ok(r), |a, v| Ok((a? - v)?) )?,
+                            OpCode::MUL =>     vals.fold(Ok(r), |a, v| Ok((a? * v)?) )?,
+                            OpCode::DIV | _ => vals.fold(Ok(r), |a, v| Ok((a? / v)?) )?,
+                        }
+                    })
+            },
             OpCode::DSP => {
                 let a = self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?;
 
@@ -155,6 +258,7 @@ impl Job {
         let initial_len = self.reg_stack.len();
         // let mut register_stack: LinkedList<MemData> = LinkedList::new();
         // let mut scope: usize = scope;
+        let old_scope = self.scope;
         self.scope = scope;
 
         for (i, inst) in insts.iter().enumerate() {
@@ -166,7 +270,10 @@ impl Job {
                 })?
         }
 
-        assert_eq!(self.reg_stack.len(), initial_len + 1);
+        self.scope = old_scope;
+
+        println!("final: {:?}", self.reg_stack);
+        // assert_eq!(self.reg_stack.len(), initial_len + 1);
         Ok(self.reg_stack.pop_back().unwrap())
     }
 }

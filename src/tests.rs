@@ -59,3 +59,38 @@ fn prg1() {
 
     assert_eq!(lisp.call(&id).unwrap(), MemData::Int(9))
 }
+
+#[test]
+fn prg2() {
+    let mut lisp: vm::VM = vm::VM::new();
+    let id = lisp.load(
+        program! {
+                    { cdar, l }
+                    {
+                        (#a = Int(8))
+                        (#b = Int(1))
+                        (#c = Int(2))
+                        (#d = Int(3))
+                    }
+                    {
+                        (REC (3))
+                            (DVR l &)
+                            (CDR l)
+                            (CAR (1))
+                        (DFN (3) cdar)
+
+                        // -------- //
+
+                        (LVR #a)
+                                    (LVR #b)
+                                        (LVR #c)
+                                        (LVR #d)
+                                    (CNS)
+                                (CNS)
+                            (CLL cdar)
+                        (ADD (2)) // #a + #c
+                    }
+        });
+
+    assert_eq!(lisp.call(&id).unwrap(), MemData::Int(10));
+}
