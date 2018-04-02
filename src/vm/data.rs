@@ -1,4 +1,5 @@
 use super::Error;
+use std::cmp::Ordering;
 
 pub type ConstID = u16;
 pub type IdentID = u16;
@@ -15,6 +16,12 @@ pub enum OpCode {
      // DFN,
      DVR,
      LVR,
+     IFT,
+     IFE,
+     CGT,
+     CLT,
+     CEQ,
+     CNT,
      CLL,
      CNV,
      CAT,
@@ -67,7 +74,7 @@ pub enum Type {
 #[allow(dead_code)]
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum MemData {
-    Lambda(Instructions),
+    Lambda(Procedure),
     Inst(Op),
     Str(String),
     Pair { car: Box<MemData>, cdr: Box<MemData>},
@@ -78,13 +85,13 @@ pub enum MemData {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Instructions {
+pub struct Procedure {
     insts: Vec<Op>
 }
 
 pub struct Bin {
     // header: <something>,
-    insts: Instructions,
+    insts: Procedure,
     consts: Vec<MemData>, // for now its a simple vec
 }
 
@@ -133,7 +140,7 @@ impl MemData {
         Error::TypeError(wanted, self.get_type())
     }
 
-    pub fn as_instructions(&self) -> Result<&Instructions, Error> {
+    pub fn as_procedure(&self) -> Result<&Procedure, Error> {
         if let &MemData::Lambda(ref i) = self {
             Ok(&i)
         } else {
@@ -157,6 +164,15 @@ impl MemData {
         }
     }
 
+    pub fn into_procedure(self) -> Result<Procedure, (Self, Error)> {
+        if let MemData::Lambda(o) = self {
+            Ok(o)
+        } else {
+            let err = self.wrong_type(Type::Lambda);
+            Err((self, err))
+        }
+    }
+
     pub fn into_instruction(self) -> Result<Op, (Self, Error)> {
         if let MemData::Inst(o) = self {
             Ok(o)
@@ -173,6 +189,38 @@ impl MemData {
             let err = self.wrong_type(Type::Pair);
             Err((self, err))
         }
+    }
+
+    #[inline]
+    pub fn is_true(&self) -> bool {
+        match *self {
+            MemData::Bool(true) => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn is_false(&self) -> bool {
+        match *self {
+            MemData::Bool(false) => true,
+            _ => false,
+        }
+    }
+
+    pub fn cmp(&self, other: &Self) -> Result<Ordering, Error> {
+        if let (&MemData::Int(ref s), &MemData::Int(ref o)) = (self, other) {
+            Ok(s.cmp(o))
+        } else {
+            Err(Error::BadOperandTypes("ordering", self.get_type(), other.get_type()))
+        }
+    }
+
+    pub fn gt(&self, other: &Self) -> Result<bool, Error> {
+        self.cmp(other).map(|v| v == Ordering::Greater)
+    }
+
+    pub fn lt(&self, other: &Self) -> Result<bool, Error> {
+        self.cmp(other).map(|v| v == Ordering::Less)
     }
 
     pub fn convert(&self, typ: &Type) -> Result<Self, Error> {
@@ -259,7 +307,7 @@ impl ::std::ops::Div for MemData {
     }
 }
 
-impl Instructions {
+impl Procedure {
     pub fn apply_const_offset(&mut self, ofs: usize) {
         self.insts.iter_mut().for_each(|i: &mut Op| i.apply_const_offset(ofs));
     }
@@ -269,7 +317,7 @@ impl Instructions {
     }
 }
 
-impl ::std::iter::FromIterator<Op> for Instructions {
+impl ::std::iter::FromIterator<Op> for Procedure {
     fn from_iter<I: IntoIterator<Item=Op>>(iter: I) -> Self {
         Self {
             insts: iter.into_iter().collect()
@@ -277,21 +325,21 @@ impl ::std::iter::FromIterator<Op> for Instructions {
     }
 }
 
-impl From<Vec<Op>> for Instructions {
+impl From<Vec<Op>> for Procedure {
     fn from(insts: Vec<Op>) -> Self {
         Self { insts }
     }
 }
 
 impl Bin {
-    pub fn new(insts: Instructions, consts: Vec<MemData>) -> Self {
+    pub fn new(insts: Procedure, consts: Vec<MemData>) -> Self {
         Self {
             insts,
             consts,
         }
     }
 
-    pub fn unpack(self) -> (Instructions, Vec<MemData>) {
+    pub fn unpack(self) -> (Procedure, Vec<MemData>) {
         (self.insts, self.consts)
     }
 

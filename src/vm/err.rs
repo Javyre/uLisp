@@ -8,8 +8,8 @@ use super::{
 
 #[derive(Debug)]
 pub struct RuntimeError {
-    pub instruction: Op,
-    pub instruction_num: usize,
+    pub instruction: Option<Op>,
+    pub instruction_num: Option<usize>,
     pub error: Error,
 }
 
@@ -17,7 +17,10 @@ impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f, "an error occured during execution of job: instruction(#{}): `{:?}`: {}",
-            self.instruction_num, self.instruction, self.error)
+            self.instruction_num.map_or_else(|| "?".to_owned(), |n| format!("{}", n)),
+            self.instruction,
+            self.error,
+            )
     }
 }
 

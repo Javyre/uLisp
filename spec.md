@@ -225,9 +225,34 @@ DSP             : print an str
                 321)))
 
     ;; -----
+    ;; IFT: if with only one conditionnally evaluated blcok
+    ;; IFE: if with an else block as well
 
 
+        REC 5
+            PSS
+                    LVR #Str("not true")
+                DSP &
+                LVR #Int(123)
+            PPS
+        LMB 5
+        REC 9
+            ;; BEGIN INNER IF
+                REC 5
+                    PSS
+                            LVR #Str("true")
+                        DSP &
+                        LVR #Int(321)
+                    PPS
+                LMB 5
+                LVR #Bool(true)
+            IFT
+            ;; END INNER IF
+        LMB 9
+            LVR #Int(1)
+            LVR #Int(2)
+        CGT 2 ;; greater than on 2 laxt vals
+    IFE
 
-    IFC
 
 

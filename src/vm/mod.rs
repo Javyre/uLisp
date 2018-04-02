@@ -51,13 +51,17 @@ impl Job {
         // FIXME: shouldn't be cloning here
         // FIXME: shouldn't be unwrapping here
         let insts = mem.borrow().get(0, id).unwrap()
-            .as_instructions().expect("Casting memdata as Instructions").clone();
+            .as_procedure().expect("Casting memdata as Procedure").clone();
 
         mem.borrow_mut().push_scope();
-        let r = self.execute(1, &insts);
+        self.execute(1, &insts);
         mem.borrow_mut().pop_scope().unwrap();
 
-        r
+        self.reg_stack.pop_back().ok_or(self::RuntimeError {
+            error: Error::IllegalRegisterPop,
+            instruction: None,
+            instruction_num: None,
+        })
     }
 
     pub fn run_instruction(&mut self, inst: &Op) -> Result<(), Error> {
@@ -122,11 +126,57 @@ impl Job {
                         )?
                     )
             },
+            OpCode::IFT | OpCode::IFE => {
+                // If-then | If-then-else
+                let cond = self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?;
+                let mut fals = None;
+                if let OpCode::IFE = inst.opcode {
+                    fals = Some(
+                        self.reg_stack
+                        .pop_back().ok_or(Error::IllegalRegisterPop)?
+                        .into_procedure().map_err(|e| e.1)?
+                        );
+                }
+                let tru = self.reg_stack
+                    .pop_back().ok_or(Error::IllegalRegisterPop)?
+                    .into_procedure().map_err(|e| e.1)?;
+
+                let sc = self.scope;
+                if !cond.is_false() {
+                    self.execute(sc, &tru)
+                        .map_err(|e| Error::RuntimeErrorInSubJob(Box::new(e)))?
+                } else if let OpCode::IFE = inst.opcode {
+                    self.execute(sc, &fals.unwrap())
+                        .map_err(|e| Error::RuntimeErrorInSubJob(Box::new(e)))?
+                }
+            },
+            OpCode::CGT | OpCode::CLT | OpCode::CEQ => {
+                // Cond ordering
+                let n = self.reg_stack.len() - inst.n.expect("getting quantifier") as usize;
+                let mut iter = self.reg_stack.split_off(n)
+                    .into_iter()
+                    .peekable();
+
+                let mut r = true;
+                while let Some(ref v) = iter.next() {
+                    r = r && if let Some(n) = iter.peek() {
+                        match inst.opcode {
+                            OpCode::CGT     => { (v.gt(n))?  },
+                            OpCode::CLT     => { (v.lt(n))?  },
+                            OpCode::CEQ | _ => { (v == n)  },
+                        }
+                    } else { true };
+                }
+                self.reg_stack.push_back(MemData::Bool(r))
+            },
+            OpCode::CNT => {
+                // Cond NOT
+            },
             OpCode::CLL => {
                 let len = self.reg_stack.len();
                 let insts = if let Some(i) = inst.ident {
                                 // FIXME: should be cloning here!!!
-                                self.mem.borrow().get(self.scope, &i)?.as_instructions()?.clone()
+                                self.mem.borrow().get(self.scope, &i)?.as_procedure()?.clone()
                             } else {
                                 let n = inst.n.expect("getting quantifier");
                                 let mut insts = Vec::with_capacity(n as usize);
@@ -140,8 +190,9 @@ impl Job {
                 mem.borrow_mut().push_scope();
                 println!("Entering subjob!");
                 let s = self.scope + 1;
-                let r = self.execute(s, &insts)
+                self.execute(s, &insts)
                     .map_err(|e| Error::RuntimeErrorInSubJob(Box::new(e)))?;
+                let r = self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?;
                 println!("Done subjob!");
                 mem.borrow_mut().pop_scope().unwrap();
 
@@ -251,7 +302,7 @@ impl Job {
 
     pub fn execute(
         &mut self, scope: usize,
-        insts: &Instructions) -> Result<MemData, err::RuntimeError> {
+        insts: &Procedure) -> Result<(), err::RuntimeError> {
 
         let initial_len = self.reg_stack.len();
         // let mut register_stack: LinkedList<MemData> = LinkedList::new();
@@ -262,8 +313,8 @@ impl Job {
         for (i, inst) in insts.iter().enumerate() {
             self.run_instruction(&inst)
                 .map_err(|e| RuntimeError {
-                    instruction: inst.clone(),
-                    instruction_num: i,
+                    instruction: Some(inst.clone()),
+                    instruction_num: Some(i),
                     error: e
                 })?
         }
@@ -272,7 +323,8 @@ impl Job {
 
         println!("final: {:?}", self.reg_stack);
         // assert_eq!(self.reg_stack.len(), initial_len + 1);
-        Ok(self.reg_stack.pop_back().unwrap())
+        // Ok(self.reg_stack.pop_back().unwrap())
+        Ok(())
     }
 }
 

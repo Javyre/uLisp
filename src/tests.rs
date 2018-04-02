@@ -96,3 +96,50 @@ fn prg2() {
 
     assert_eq!(lisp.call(&id).unwrap(), MemData::Int(10));
 }
+
+
+#[test]
+fn prg3() {
+    let mut lisp: vm::VM = vm::VM::new();
+    let id = lisp.load(
+        program! {
+                    { }
+                    {
+                        (#t = Bool(true))
+                        (#strue = Str("true".to_owned()))
+                        (#sntrue = Str("not true".to_owned()))
+                        (#a = Int(123))
+                        (#b = Int(321))
+                        (#_one = Int(1))
+                        (#_two = Int(2))
+                    }
+                    {
+                            (REC (5))
+                                (PSS)
+                                        (LVR #sntrue)
+                                    (DSP &)
+                                    (LVR #a)
+                                (PPS)
+                            (LMB (5))
+                            (REC (9))
+                                // BEGIN INNER IF
+                                    (REC (5))
+                                        (PSS)
+                                                (LVR #strue)
+                                            (DSP &)
+                                            (LVR #b)
+                                        (PPS)
+                                    (LMB (5))
+                                    (LVR #t)
+                                (IFT)
+                                // END INNER IF
+                            (LMB (9))
+                                (LVR #_one)
+                                (LVR #_two)
+                            (CGT (2)) // greater than on 2 laxt vals
+                        (IFE)
+                    }
+        });
+
+    assert_eq!(lisp.call(&id).unwrap(), MemData::Int(321));
+}
