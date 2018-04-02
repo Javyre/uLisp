@@ -77,7 +77,9 @@ fn prg2() {
                             (DVR l &)
                             (CDR l)
                             (CAR (1))
-                        (DFN (3) cdar)
+                        // (DFN (3) cdar)
+                        (LMB (3))
+                        (DVR cdar &)
 
                         // -------- //
 

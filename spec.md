@@ -91,7 +91,9 @@
         DVR 'l' mute ;; load parameter(s) to scope
         CDR 'l'
         CAR 1
-    DFN 3 'cdar'
+    LMB 3
+    > DFN 3 'cdar'
+    DVR 'cdar' mute
 
     ;; --
 

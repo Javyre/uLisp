@@ -89,7 +89,8 @@ impl Job {
                 self.recording = inst.n.unwrap_or(1) as usize;
             },
 
-            OpCode::DFN => {
+            // OpCode::DFN => {
+            OpCode::LMB => {
                 let n = inst.n.expect("getting quatifier");
                 let mut is: Vec<Op> = Vec::with_capacity(n as usize);
 
@@ -98,10 +99,7 @@ impl Job {
                     is.push(v.into_instruction().map_err(|e| e.1)?);
                 }
 
-                mem.borrow_mut().define(self.scope,
-                                        inst.ident.expect("getting identifier"),
-                                        MemData::Lambda(is.into()));
-                self.reg_stack.push_back(MemData::Nil)
+                self.reg_stack.push_back(MemData::Lambda(is.into()))
             },
             OpCode::DVR => {
                 let val = inst.val.map_or_else(
