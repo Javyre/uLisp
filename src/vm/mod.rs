@@ -100,7 +100,7 @@ impl Job {
 
                 mem.borrow_mut().define(self.scope,
                                         inst.ident.expect("getting identifier"),
-                                        MemData::Insts(is.into()));
+                                        MemData::Lambda(is.into()));
                 self.reg_stack.push_back(MemData::Nil)
             },
             OpCode::DVR => {
@@ -295,7 +295,7 @@ impl VM {
 
         insts.apply_const_offset(const_ofs);
         let id = self.memory.borrow_mut().generate_ident_id(0);
-        self.memory.borrow_mut().define(0, id, MemData::Insts(insts));
+        self.memory.borrow_mut().define(0, id, MemData::Lambda(insts));
 
         id
     }

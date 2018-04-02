@@ -203,4 +203,29 @@ DSP             : print an str
 
 # Conditionals:
 
+    (cond ((> 1 2)
+           (display "not true")
+           123)
+          (#t
+           (display "true")
+           321))
+
+    ;; -----
+
+
+    (if (> 1 2)
+        (do
+            (display "not true")
+            123)
+        (if #t
+            (do
+                (display "true")
+                321)))
+
+    ;; -----
+
+
+
+    IFC
+
 

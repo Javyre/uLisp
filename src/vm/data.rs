@@ -42,7 +42,7 @@ pub struct Op {
 #[repr(u8)]
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum Type {
-    Insts,
+    Lambda,
     Inst,
     Str,
     Pair,
@@ -66,7 +66,7 @@ pub enum Type {
 #[allow(dead_code)]
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum MemData {
-    Insts(Instructions),
+    Lambda(Instructions),
     Inst(Op),
     Str(String),
     Pair { car: Box<MemData>, cdr: Box<MemData>},
@@ -116,7 +116,7 @@ impl Op {
 impl MemData {
     pub fn get_type(&self) -> Type {
         match *self {
-            MemData::Insts(..) => Type::Insts,
+            MemData::Lambda(..) => Type::Lambda,
             MemData::Inst(..)  => Type::Inst,
             MemData::Str(..)   => Type::Str,
             MemData::Pair {..} => Type::Pair,
@@ -133,10 +133,10 @@ impl MemData {
     }
 
     pub fn as_instructions(&self) -> Result<&Instructions, Error> {
-        if let &MemData::Insts(ref i) = self {
+        if let &MemData::Lambda(ref i) = self {
             Ok(&i)
         } else {
-            Err(self.wrong_type(Type::Insts))
+            Err(self.wrong_type(Type::Lambda))
         }
     }
 
