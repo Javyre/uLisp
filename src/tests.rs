@@ -1,8 +1,16 @@
+extern crate env_logger;
+
 use vm;
 use vm::*;
 
+fn init_logger() {
+    let _ = env_logger::try_init();
+}
+
 #[test]
 fn prg0() {
+    init_logger();
+
     let mut lisp: vm::VM = vm::VM::new();
 
     /*
@@ -49,6 +57,8 @@ fn prg0() {
 
 #[test]
 fn prg1() {
+    init_logger();
+
     let mut lisp: vm::VM = vm::VM::new();
     let id = lisp.load(
         program! {
@@ -62,6 +72,8 @@ fn prg1() {
 
 #[test]
 fn prg2() {
+    init_logger();
+
     let mut lisp: vm::VM = vm::VM::new();
     let id = lisp.load(
         program! {
@@ -100,6 +112,8 @@ fn prg2() {
 
 #[test]
 fn prg3() {
+    init_logger();
+
     let mut lisp: vm::VM = vm::VM::new();
     let id = lisp.load(
         program! {

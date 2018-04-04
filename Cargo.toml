@@ -5,3 +5,4 @@ authors = ["javier"]
 
 [dependencies]
 log = "0.4"
+env_logger = "0.5"

@@ -1,6 +1,7 @@
 // #![recursion_limit="128"]
 #[macro_use]
 extern crate log;
+extern crate env_logger;
 
 #[macro_use]
 mod vm;
@@ -24,6 +25,8 @@ use vm::{
 };
 
 fn main() {
+    env_logger::init();
+
     // TODO: implement lisp!
     let mut lisp: vm::VM = vm::VM::new();
 
