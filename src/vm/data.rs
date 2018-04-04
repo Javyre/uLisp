@@ -1,5 +1,6 @@
 use super::Error;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 pub type ConstID = u16;
 pub type IdentID = u16;
@@ -92,6 +93,8 @@ pub struct Procedure {
 pub struct Bin {
     // header: <something>,
     insts: Procedure,
+    idents: Vec<IdentID>,
+    var_strings: HashMap<IdentID, String>,
     consts: Vec<MemData>, // for now its a simple vec
 }
 
@@ -332,15 +335,23 @@ impl From<Vec<Op>> for Procedure {
 }
 
 impl Bin {
-    pub fn new(insts: Procedure, consts: Vec<MemData>) -> Self {
+    pub fn new(insts: Procedure,
+               idents: Vec<IdentID>,
+               var_strings: HashMap<IdentID, String>,
+               consts: Vec<MemData>) -> Self {
         Self {
             insts,
+            idents,
+            var_strings,
             consts,
         }
     }
 
-    pub fn unpack(self) -> (Procedure, Vec<MemData>) {
-        (self.insts, self.consts)
+    pub fn unpack(self) -> (Procedure,
+                            Vec<IdentID>,
+                            HashMap<IdentID, String>,
+                            Vec<MemData>) {
+        (self.insts, self.idents, self.var_strings, self.consts)
     }
 
 }

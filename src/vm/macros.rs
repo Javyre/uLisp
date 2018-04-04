@@ -64,13 +64,17 @@ macro_rules! consts {
 }
 
 macro_rules! idents {
-    { $($idents:ident),+ } => {
+    { ($ids_n:ident, $var_str_n:ident) = $($idents:ident),+ } => {
         #[allow(non_camel_case_types)]
         #[repr(u16)]
         enum ___BinIdent { $($idents),* }
+        let $ids_n = vec![$(___BinIdent::$idents as $crate::vm::IdentID),*];
+        let mut $var_str_n = ::std::collections::HashMap::new();
+        $( $var_str_n.insert(___BinIdent::$idents as $crate::vm::IdentID,
+                             stringify!($idents).to_owned()); )*
     };
 
-    {} => {};
+    { ($a:ident, $b:ident) = } => { };
 }
 
 
@@ -78,13 +82,18 @@ macro_rules! idents {
 macro_rules! program {
     { {$($idents:tt)*} {$($consts:tt)*} {$($instructions:tt)*} } => {
         {
+            use ::std::collections::HashMap;
             let ___bin_consts: Vec<MemData> = vec![];
-            idents!{ $($idents)* };
+            let ___bin_idents: Vec<IdentID> = vec![];
+            let ___bin_var_strings: HashMap<IdentID, String> = HashMap::new();
+            idents!{ (___bin_idents, ___bin_var_strings) = $($idents)* };
             consts!{ ___bin_consts = $($consts)* };
 
             Bin::new(
                 instructions!{ $($instructions)* }.into(),
-                ___bin_consts
+                ___bin_idents,
+                ___bin_var_strings,
+                ___bin_consts,
                 )
         }
     }

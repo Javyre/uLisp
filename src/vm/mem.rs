@@ -18,6 +18,7 @@ pub struct Environment {
 }
 
 pub struct Memory {
+    var_strings: HashMap<IdentID, String>,
     consts: Vec<MemData>,
     // stack: Vec<Environment>,
     stack: Stack,
@@ -77,6 +78,7 @@ impl Environment {
 impl Memory {
     pub fn new() -> Self {
         Self {
+            var_strings: HashMap::new(),
             consts: vec![], // NOTE: maybe use Option here?
             // stack: vec![Environment::new()],
             stack: Stack::new(),
@@ -97,11 +99,34 @@ impl Memory {
         r
     }
 
-    #[inline]
-    pub fn generate_ident_id(&self) -> IdentID {
-        self.stack.generate_ident_id()
+    pub fn bind_idents(
+        &mut self, mut idents: Vec<IdentID>, mut var_strings: HashMap<IdentID, String>)
+        -> (Vec<IdentID>, HashMap<IdentID, String>) {
+
+            let mut new_var_strings = HashMap::new();
+            idents.iter_mut().for_each(|i| {
+                let ni = self.bind_ident_id(var_strings.get(i).map(|s| s.to_owned()));
+                if var_strings.contains_key(i) {
+                    new_var_strings.insert(ni, var_strings.remove(i).unwrap());
+                }
+                *i = ni;
+            });
+
+            (idents, new_var_strings)
     }
 
+    // All IdentID creation for memory should pass by here
+    // doing otherwise will cause spooky behaviour
+    #[inline]
+    pub fn bind_ident_id(&mut self, var_str: Option<String>) -> IdentID {
+        let id = self.stack.generate_ident_id();
+        if let Some(s) = var_str {
+            self.var_strings.insert(id, s);
+        }
+        id
+    }
+
+    #[inline]
     pub fn define(&mut self, scope: usize, ident: IdentID, val: MemData) -> Result<(), Error> {
         Ok(self.stack.get_frame_mut(scope)?.define(ident, val))
     }

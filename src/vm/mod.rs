@@ -340,11 +340,13 @@ impl VM {
 
     // return IdentID of the function representing the bin
     pub fn load(&mut self, bin: Bin) -> IdentID {
-        let (mut insts, consts) = bin.unpack();
+        let (mut insts, idents, var_strings, consts) = bin.unpack();
         let const_ofs = self.memory.borrow_mut().load_consts(consts);
 
+        let (idents, _) = self.memory.borrow_mut().bind_idents(idents, var_strings);
+
         insts.apply_const_offset(const_ofs);
-        let id = self.memory.borrow_mut().generate_ident_id();
+        let id = self.memory.borrow_mut().bind_ident_id(None);
         self.memory.borrow_mut().define(0, id, MemData::Lambda(insts));
 
         id
