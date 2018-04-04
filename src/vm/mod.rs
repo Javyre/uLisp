@@ -70,12 +70,12 @@ impl Job {
         if self.recording > 0 {
             self.recording -= 1;
             self.reg_stack.push_back(MemData::Inst(inst.clone()));
-            println!("recording: {:?}", self.reg_stack.back().unwrap());
+            debug!("recording: {:?}", self.reg_stack.back().unwrap());
             return Ok(());
         }
 
-        println!("{:?}", inst);
-        println!("{:?}\n", self.reg_stack);
+        debug!("{:?}", inst);
+        debug!("{:?}\n", self.reg_stack);
         match inst.opcode {
             // OpCode::PSS => { self.memory.inc_scope(1); },
             // OpCode::PPS => { self.memory.dec_scope(1); },
@@ -113,7 +113,7 @@ impl Job {
                     )?;
                 mem.borrow_mut().define(self.scope,
                                         inst.ident.expect("getting identifier"),
-                                        val)
+                                        val)?
             },
             OpCode::LVR => {
                 let s = self.scope;
@@ -188,12 +188,12 @@ impl Job {
                             };
 
                 mem.borrow_mut().push_scope();
-                println!("Entering subjob!");
+                trace!("Entering subjob!");
                 let s = self.scope + 1;
                 self.execute(s, &insts)
                     .map_err(|e| Error::RuntimeErrorInSubJob(Box::new(e)))?;
                 let r = self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?;
-                println!("Done subjob!");
+                trace!("Done subjob!");
                 mem.borrow_mut().pop_scope().unwrap();
 
                 self.reg_stack.push_back(r)
@@ -321,7 +321,7 @@ impl Job {
 
         self.scope = old_scope;
 
-        println!("final: {:?}", self.reg_stack);
+        debug!("final: {:?}", self.reg_stack);
         // assert_eq!(self.reg_stack.len(), initial_len + 1);
         // Ok(self.reg_stack.pop_back().unwrap())
         Ok(())
@@ -344,7 +344,7 @@ impl VM {
         let const_ofs = self.memory.borrow_mut().load_consts(consts);
 
         insts.apply_const_offset(const_ofs);
-        let id = self.memory.borrow_mut().generate_ident_id(0);
+        let id = self.memory.borrow_mut().generate_ident_id();
         self.memory.borrow_mut().define(0, id, MemData::Lambda(insts));
 
         id

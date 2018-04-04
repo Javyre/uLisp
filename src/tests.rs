@@ -106,8 +106,8 @@ fn prg3() {
                     { }
                     {
                         (#t = Bool(true))
-                        (#strue = Str("true".to_owned()))
-                        (#sntrue = Str("not true".to_owned()))
+                        (#strue = Str("true\n".to_owned()))
+                        (#sntrue = Str("not true\n".to_owned()))
                         (#a = Int(123))
                         (#b = Int(321))
                         (#_one = Int(1))

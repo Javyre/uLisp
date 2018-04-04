@@ -40,6 +40,7 @@ pub enum Error {
     IllegalConversion(Type, Type),
     RuntimeErrorInSubJob(Box<RuntimeError>),
     BadOperandTypes(&'static str, Type, Type),
+    BadScopeIndex(usize),
 }
 
 impl fmt::Display for Error {
@@ -61,6 +62,8 @@ impl fmt::Display for Error {
                 write!(f, "runtime error occured while running a subjob: {}", e),
             Error::BadOperandTypes(ref o, ref a, ref b) =>
                 write!(f, "bad operand types: attemped `{}` on types `{:?}` and `{:?}`", o, a, b),
+            Error::BadScopeIndex(ref i) =>
+                write!(f, "bad scope index: {}", i),
         }
     }
 }
@@ -76,6 +79,7 @@ impl ::std::error::Error for Error {
             Error::IllegalConversion(..) => "illegal conversion target",
             Error::RuntimeErrorInSubJob(..) => "runtime error occured while running a subjob",
             Error::BadOperandTypes(..)   => "bad operand types",
+            Error::BadScopeIndex(..)     => "bad scope index",
         }
     }
 }

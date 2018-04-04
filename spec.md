@@ -254,5 +254,45 @@ DSP             : print an str
         CGT 2 ;; greater than on 2 laxt vals
     IFE
 
+    ;; -------------
+    ;; closures
+
+        (do
+            (define foo
+                (let ((x 4))
+                    (lambda (y) (+ x y))))
+            (foo 6)) ;; == 10
+
+    ;; ---
+
+        (do
+            (define foo
+                (do
+                    (define-var x 4)
+                    (lambda (y) (+ x y))))
+            (foo 6)) ;; == 10
+
+    ;; ---
+
+        PSS
+            PSS
+                    LVR #Int(4)
+                DVR x &
+                    REC 4
+                        DVR y &
+                            LVR x ;; we need to capture x
+                            LVR y
+                        ADD 2
+                    PRC 4
+                    CAP x ;; capture x (does not return anything)
+                    ;; ENV 1
+                LMB
+            PPS
+            DVR foo &
+                LVR #Int(6)
+            CLL foo
+        PPS
+
+
 
 
