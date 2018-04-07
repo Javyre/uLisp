@@ -1,4 +1,5 @@
 use super::Error;
+use std::fmt;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -37,7 +38,7 @@ pub enum OpCode {
 }
 
 // TODO: make Op compact and outputtable
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct Op {
     pub opcode: OpCode, // u6
     pub ident:  Option<IdentID>,
@@ -121,6 +122,19 @@ impl Op {
     // NOTE: ConstID + ofs > u16 = undefined behaviour!!!
     pub fn apply_const_offset(&mut self, ofs: usize) {
         self.val.map(|cid| cid + ofs as u16); // TODO: make offset actually be able to be usize
+    }
+}
+
+impl fmt::Debug for Op {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Op(\"{:?}{}{}{}{}{}\")",
+               self.opcode,
+               self.ident.map_or("".to_owned(), |v| format!(" {:?}", v)),
+               self.n.map_or("".to_owned(), |v| format!(" ({:?})", v)),
+               self.val.map_or("".to_owned(), |v| format!(" #{:?}", v)),
+               self.typ.map_or("".to_owned(), |v| format!(" <{:?}>", v)),
+               if self.mute { "" } else { " &" },
+               )
     }
 }
 
