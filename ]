@@ -142,7 +142,7 @@ impl Memory {
 
             let f = self.stack.get_frame(scope)?;
             if f.get(ident).is_some() {
-                return Ok(Ref::map(f, |f| f.get(ident).unwrap()));
+                return Ok(Ref::map( f, |f| f.get(ident).unwrap()));
             }
         }
 

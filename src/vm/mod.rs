@@ -50,8 +50,10 @@ impl Job {
 
         // FIXME: shouldn't be cloning here
         // FIXME: shouldn't be unwrapping here
-        let insts = mem.borrow().get(0, id).unwrap()
+        let m = mem.borrow();
+        let insts = m.get(0, id).unwrap()
             .as_procedure().expect("Casting memdata as Procedure").clone();
+        drop(m);
 
         mem.borrow_mut().push_scope();
         self.execute(1, &insts);
@@ -117,11 +119,11 @@ impl Job {
             },
             OpCode::LVR => {
                 let s = self.scope;
+                let m = mem.borrow();
                 self.reg_stack.push_back(
                     inst.val.map_or_else(
-                        | | Ok(mem.borrow()
-                              .get(s, &inst.ident.expect("getting ident"))?
-                              .clone()),
+                        | | Ok(m.get(s, &inst.ident.expect("getting ident"))?
+                                .clone()),
                         |v| Ok(mem.borrow().get_const(&v)?.clone()),
                         )?
                     )
@@ -174,9 +176,10 @@ impl Job {
             },
             OpCode::CLL => {
                 let len = self.reg_stack.len();
+                let m = mem.borrow();
                 let insts = if let Some(i) = inst.ident {
                                 // FIXME: should be cloning here!!!
-                                self.mem.borrow().get(self.scope, &i)?.as_procedure()?.clone()
+                                m.get(self.scope, &i)?.as_procedure()?.clone()
                             } else {
                                 let n = inst.n.expect("getting quantifier");
                                 let mut insts = Vec::with_capacity(n as usize);
@@ -186,6 +189,7 @@ impl Job {
                                 }
                                 insts.into()
                             };
+                drop(m);
 
                 mem.borrow_mut().push_scope();
                 trace!("Entering subjob!");
@@ -201,6 +205,7 @@ impl Job {
             },
             OpCode::CNV => {
                 let s = self.scope;
+                let m = mem.borrow();
                 let vals = inst.ident
                                .map_or_else(
                                    | | Ok({
@@ -209,7 +214,7 @@ impl Job {
                                    }),
                                    |i| Ok({
                                        let mut ll = LinkedList::new();
-                                       ll.push_back(mem.borrow().get(s, &i)?.clone());
+                                       ll.push_back(m.get(s, &i)?.clone());
                                        ll
                                    }))?
                                .into_iter()
@@ -238,7 +243,8 @@ impl Job {
             OpCode::CAR | OpCode::CDR => {
                 let vals = if let Some(i) = inst.ident {
                     let mut r = LinkedList::new();
-                    r.push_back(self.mem.borrow().get(self.scope, &i)?.clone());
+                    let m = mem.borrow();
+                    r.push_back(m.get(self.scope, &i)?.clone());
                     r
                 } else {
                     let n = self.reg_stack.len() - inst.n.unwrap_or(1) as usize;
@@ -266,7 +272,8 @@ impl Job {
             | OpCode::MUL | OpCode::DIV => {
                 let vals = if let Some(i) = inst.ident {
                     let mut r = LinkedList::new();
-                    r.push_back(self.mem.borrow().get(self.scope, &i)?.clone());
+                    let m = mem.borrow();
+                    r.push_back(m.get(self.scope, &i)?.clone());
                     r.push_back(self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?);
                     r
                 } else {
