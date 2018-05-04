@@ -2,6 +2,7 @@ use super::Error;
 use std::fmt;
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub type ConstID = u16;
 pub type IdentID = u16;
@@ -52,6 +53,7 @@ pub struct Op {
 #[repr(u8)]
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum Type {
+    Pointer,
     Lambda,
     Inst,
     Str,
@@ -76,6 +78,8 @@ pub enum Type {
 #[allow(dead_code)]
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum MemData {
+    // Lambda(Procedure, Stack),
+    Pointer(Rc<MemData>),
     Lambda(Procedure),
     Inst(Op),
     Str(String),
@@ -121,7 +125,14 @@ impl Op {
 
     // NOTE: ConstID + ofs > u16 = undefined behaviour!!!
     pub fn apply_const_offset(&mut self, ofs: usize) {
-        self.val.map(|cid| cid + ofs as u16); // TODO: make offset actually be able to be usize
+        self.val = self.val.map(|cid| cid + ofs as u16); // TODO: make offset actually be able to be usize
+    }
+
+    // old and new must be sorted!!
+    pub fn apply_ident_swap(&mut self, old: &Vec<IdentID>, new: &Vec<IdentID>) {
+        self.ident = self.ident.map(|iid| {
+            old.binary_search(&iid).map(|i| *new.get(i).unwrap()).unwrap_or(iid)
+        });
     }
 }
 
@@ -141,6 +152,7 @@ impl fmt::Debug for Op {
 impl MemData {
     pub fn get_type(&self) -> Type {
         match *self {
+            MemData::Pointer(..)=> Type::Pointer,
             MemData::Lambda(..) => Type::Lambda,
             MemData::Inst(..)  => Type::Inst,
             MemData::Str(..)   => Type::Str,
@@ -157,8 +169,34 @@ impl MemData {
         Error::TypeError(wanted, self.get_type())
     }
 
+    /// Traces pointer type back to the source and returns its MemData value
+    // pub fn deref(&self) -> Result<Rc<RefCell<MemData>>, &MemData> {
+    pub fn deref(&self) -> &MemData {
+        if let &MemData::Pointer(ref rc) = self {
+            rc.deref()
+        } else { 
+            &self
+        }
+    }
+
+    pub fn create_pointer(data: MemData) -> MemData {
+        if data.get_type() == Type::Pointer {
+            data
+        } else {
+            MemData::Pointer(Rc::new(data))
+        }
+    }
+
+    pub fn clone_pointer(&self) -> Option<MemData> {
+        if let &MemData::Pointer(ref rc) = self {
+            Some(MemData::Pointer(Rc::clone(rc)))
+        } else {
+            None
+        }
+    }
+
     pub fn as_procedure(&self) -> Result<&Procedure, Error> {
-        if let &MemData::Lambda(ref i) = self {
+        if let &MemData::Lambda(ref i) = self.deref() {
             Ok(&i)
         } else {
             Err(self.wrong_type(Type::Lambda))
@@ -166,7 +204,7 @@ impl MemData {
     }
 
     pub fn as_instruction(&self) -> Result<&Op, Error> {
-        if let &MemData::Inst(ref o) = self {
+        if let &MemData::Inst(ref o) = self.deref() {
             Ok(&o)
         } else {
             Err(self.wrong_type(Type::Inst))
@@ -174,7 +212,7 @@ impl MemData {
     }
 
     pub fn as_string(&self) -> Result<&String, Error> {
-        if let &MemData::Str(ref s) = self {
+        if let &MemData::Str(ref s) = self.deref() {
             Ok(&s)
         } else {
             Err(self.wrong_type(Type::Str))
@@ -210,7 +248,7 @@ impl MemData {
 
     #[inline]
     pub fn is_true(&self) -> bool {
-        match *self {
+        match *self.deref() {
             MemData::Bool(true) => true,
             _ => false,
         }
@@ -218,16 +256,21 @@ impl MemData {
 
     #[inline]
     pub fn is_false(&self) -> bool {
-        match *self {
+        match *self.deref() {
             MemData::Bool(false) => true,
             _ => false,
         }
     }
 
     pub fn cmp(&self, other: &Self) -> Result<Ordering, Error> {
-        if let (&MemData::Int(ref s), &MemData::Int(ref o)) = (self, other) {
-            Ok(s.cmp(o))
-        } else {
+        match (self.deref(), other.deref()) {
+        (&MemData::Int(ref s), &MemData::Int(ref o)) => 
+            Ok(s.cmp(o)),
+
+        (&MemData::Nil, &MemData::Nil) =>
+            Ok(Ordering::Equal),
+
+        _ =>
             Err(Error::BadOperandTypes("ordering", self.get_type(), other.get_type()))
         }
     }
@@ -238,6 +281,10 @@ impl MemData {
 
     pub fn lt(&self, other: &Self) -> Result<bool, Error> {
         self.cmp(other).map(|v| v == Ordering::Less)
+    }
+
+    pub fn eq(&self, other: &Self) -> Result<bool, Error> {
+        self.cmp(other).map(|v| v == Ordering::Equal)
     }
 
     pub fn convert(&self, typ: &Type) -> Result<Self, Error> {
@@ -260,12 +307,12 @@ impl ::std::ops::Add for MemData {
     type Output = Result<MemData, Error>;
 
     fn add(self, other: Self) -> Self::Output {
-        let (a, b) = (self.get_type(), other.get_type());
+        let (a, b) = (self.deref().get_type(), other.deref().get_type());
 
         // We're dissallowing inter-type operations for now at least
         if a != b { return Err(Error::BadOperandTypes("sum", a, b)) }
 
-        if let (MemData::Int(a), MemData::Int(b)) = (self, other) {
+        if let (&MemData::Int(a), &MemData::Int(b)) = (self.deref(), other.deref()) {
             return Ok(MemData::Int(a + b))
         }
 
@@ -277,12 +324,12 @@ impl ::std::ops::Sub for MemData {
     type Output = Result<MemData, Error>;
 
     fn sub(self, other: Self) -> Self::Output {
-        let (a, b) = (self.get_type(), other.get_type());
+        let (a, b) = (self.deref().get_type(), other.deref().get_type());
 
         // We're dissallowing inter-type operations for now at least
         if a != b { return Err(Error::BadOperandTypes("subtraction", a, b)) }
 
-        if let (MemData::Int(a), MemData::Int(b)) = (self, other) {
+        if let (&MemData::Int(a), &MemData::Int(b)) = (self.deref(), other.deref()) {
             return Ok(MemData::Int(a - b))
         }
 
@@ -294,12 +341,12 @@ impl ::std::ops::Mul for MemData {
     type Output = Result<MemData, Error>;
 
     fn mul(self, other: Self) -> Self::Output {
-        let (a, b) = (self.get_type(), other.get_type());
+        let (a, b) = (self.deref().get_type(), other.deref().get_type());
 
         // We're dissallowing inter-type operations for now at least
         if a != b { return Err(Error::BadOperandTypes("multiplication", a, b)) }
 
-        if let (MemData::Int(a), MemData::Int(b)) = (self, other) {
+        if let (&MemData::Int(a), &MemData::Int(b)) = (self.deref(), other.deref()) {
             return Ok(MemData::Int(a * b))
         }
 
@@ -311,12 +358,12 @@ impl ::std::ops::Div for MemData {
     type Output = Result<MemData, Error>;
 
     fn div(self, other: Self) -> Self::Output {
-        let (a, b) = (self.get_type(), other.get_type());
+        let (a, b) = (self.deref().get_type(), other.deref().get_type());
 
         // We're dissallowing inter-type operations for now at least
         if a != b { return Err(Error::BadOperandTypes("division", a, b)) }
 
-        if let (MemData::Int(a), MemData::Int(b)) = (self, other) {
+        if let (&MemData::Int(a), &MemData::Int(b)) = (self.deref(), other.deref()) {
             return Ok(MemData::Int(a / b))
         }
 
@@ -327,6 +374,12 @@ impl ::std::ops::Div for MemData {
 impl Procedure {
     pub fn apply_const_offset(&mut self, ofs: usize) {
         self.insts.iter_mut().for_each(|i: &mut Op| i.apply_const_offset(ofs));
+    }
+
+    pub fn apply_ident_swaps(&mut self, mut old: Vec<IdentID>, mut new: Vec<IdentID>) {
+        old.sort_unstable();
+        new.sort_unstable();
+        self.insts.iter_mut().for_each(|i: &mut Op| i.apply_ident_swap(&old, &new))
     }
 
     pub fn iter(&self) -> ::std::slice::Iter<Op> {

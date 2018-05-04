@@ -52,7 +52,7 @@ fn prg0() {
                     }
         });
 
-    assert_eq!(lisp.call(&id).unwrap(), MemData::Nil);
+    assert!(lisp.call(&id).unwrap().eq(&MemData::Nil).unwrap());
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn prg1() {
                     { (LVR #a) }
         });
 
-    assert_eq!(lisp.call(&id).unwrap(), MemData::Int(9))
+    assert!(lisp.call(&id).unwrap().eq(&MemData::Int(9)).unwrap())
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn prg2() {
                     }
         });
 
-    assert_eq!(lisp.call(&id).unwrap(), MemData::Int(10));
+    assert!(lisp.call(&id).unwrap().eq(&MemData::Int(10)).unwrap());
 }
 
 
@@ -155,5 +155,5 @@ fn prg3() {
                     }
         });
 
-    assert_eq!(lisp.call(&id).unwrap(), MemData::Int(321));
+    assert!(lisp.call(&id).unwrap().eq(&MemData::Int(321)).unwrap());
 }
