@@ -98,3 +98,22 @@ macro_rules! program {
         }
     }
 }
+
+#[macro_export]
+macro_rules! map_as {
+    ($expr:expr => $ty:ident($($ids:tt)*) => $body:expr) => {
+        if let MemData::$ty($($ids)*) = $expr { 
+            Ok($body)
+        } else {
+            Err($expr.wrong_type(Type::$ty))
+        }
+    };
+
+    ($expr:expr => $ty:ident{$($ids:tt)*} => $body:expr) => {
+        if let MemData::$ty{$($ids)*} = $expr {
+            Ok($body)
+        } else {
+            Err($expr.wrong_type(Type::$ty))
+        }
+    };
+}

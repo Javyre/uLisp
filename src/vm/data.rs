@@ -1,4 +1,8 @@
-use super::Error;
+use super::{
+    Error,
+    Environment,
+};
+
 use std::fmt;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -16,6 +20,7 @@ pub enum OpCode {
      PPS,
      REC,
      LMB,
+     PRC,
      // DFN,
      DVR,
      LVR,
@@ -55,6 +60,7 @@ pub struct Op {
 pub enum Type {
     Pointer,
     Lambda,
+    Proc,
     Inst,
     Str,
     Pair,
@@ -80,15 +86,15 @@ pub enum Type {
 pub enum MemData {
     // Lambda(Procedure, Stack),
     Pointer(Rc<MemData>),
-    Lambda(Procedure),
+    Lambda(Procedure, Environment),
+    Proc(Procedure),
     Inst(Op),
     Str(String),
     Pair { car: Box<MemData>, cdr: Box<MemData>},
     Int(u32),
     Char(u8),
     Bool(bool),
-    Nil,
-}
+    Nil, }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Procedure {
@@ -144,7 +150,7 @@ impl fmt::Debug for Op {
                self.n.map_or("".to_owned(), |v| format!(" ({:?})", v)),
                self.val.map_or("".to_owned(), |v| format!(" #{:?}", v)),
                self.typ.map_or("".to_owned(), |v| format!(" <{:?}>", v)),
-               if self.mute { "" } else { " &" },
+               if self.mute { " &" } else { "" },
                )
     }
 }
@@ -154,6 +160,7 @@ impl MemData {
         match *self {
             MemData::Pointer(..)=> Type::Pointer,
             MemData::Lambda(..) => Type::Lambda,
+            MemData::Proc(..)  => Type::Proc,
             MemData::Inst(..)  => Type::Inst,
             MemData::Str(..)   => Type::Str,
             MemData::Pair {..} => Type::Pair,
@@ -165,7 +172,7 @@ impl MemData {
     }
 
     #[inline]
-    fn wrong_type(&self, wanted: Type) -> Error {
+    pub fn wrong_type(&self, wanted: Type) -> Error {
         Error::TypeError(wanted, self.get_type())
     }
 
@@ -195,56 +202,56 @@ impl MemData {
         }
     }
 
-    pub fn as_procedure(&self) -> Result<&Procedure, Error> {
-        if let &MemData::Lambda(ref i) = self.deref() {
-            Ok(&i)
-        } else {
-            Err(self.wrong_type(Type::Lambda))
-        }
-    }
+    // pub fn as_procedure(&self) -> Result<&Procedure, Error> {
+    //     if let &MemData::Lambda(ref i) = self.deref() {
+    //         Ok(&i)
+    //     } else {
+    //         Err(self.wrong_type(Type::Lambda))
+    //     }
+    // }
 
-    pub fn as_instruction(&self) -> Result<&Op, Error> {
-        if let &MemData::Inst(ref o) = self.deref() {
-            Ok(&o)
-        } else {
-            Err(self.wrong_type(Type::Inst))
-        }
-    }
+    // pub fn as_instruction(&self) -> Result<&Op, Error> {
+    //     if let &MemData::Inst(ref o) = self.deref() {
+    //         Ok(&o)
+    //     } else {
+    //         Err(self.wrong_type(Type::Inst))
+    //     }
+    // }
 
-    pub fn as_string(&self) -> Result<&String, Error> {
-        if let &MemData::Str(ref s) = self.deref() {
-            Ok(&s)
-        } else {
-            Err(self.wrong_type(Type::Str))
-        }
-    }
+    // pub fn as_string(&self) -> Result<&String, Error> {
+    //     if let &MemData::Str(ref s) = self.deref() {
+    //         Ok(&s)
+    //     } else {
+    //         Err(self.wrong_type(Type::Str))
+    //     }
+    // }
 
-    pub fn into_procedure(self) -> Result<Procedure, (Self, Error)> {
-        if let MemData::Lambda(o) = self {
-            Ok(o)
-        } else {
-            let err = self.wrong_type(Type::Lambda);
-            Err((self, err))
-        }
-    }
+    // pub fn into_procedure(self) -> Result<Procedure, (Self, Error)> {
+    //     if let MemData::Lambda(o) = self {
+    //         Ok(o)
+    //     } else {
+    //         let err = self.wrong_type(Type::Lambda);
+    //         Err((self, err))
+    //     }
+    // }
 
-    pub fn into_instruction(self) -> Result<Op, (Self, Error)> {
-        if let MemData::Inst(o) = self {
-            Ok(o)
-        } else {
-            let err = self.wrong_type(Type::Inst);
-            Err((self, err))
-        }
-    }
+    // pub fn into_instruction(self) -> Result<Op, (Self, Error)> {
+    //     if let MemData::Inst(o) = self {
+    //         Ok(o)
+    //     } else {
+    //         let err = self.wrong_type(Type::Inst);
+    //         Err((self, err))
+    //     }
+    // }
 
-    pub fn into_pair(self) -> Result<(Box<MemData>, Box<MemData>), (Self, Error)> {
-        if let MemData::Pair { car, cdr } = self {
-            Ok((car, cdr))
-        } else {
-            let err = self.wrong_type(Type::Pair);
-            Err((self, err))
-        }
-    }
+    // pub fn into_pair(self) -> Result<(Box<MemData>, Box<MemData>), (Self, Error)> {
+    //     if let MemData::Pair { car, cdr } = self {
+    //         Ok((car, cdr))
+    //     } else {
+    //         let err = self.wrong_type(Type::Pair);
+    //         Err((self, err))
+    //     }
+    // }
 
     #[inline]
     pub fn is_true(&self) -> bool {
@@ -284,7 +291,12 @@ impl MemData {
     }
 
     pub fn eq(&self, other: &Self) -> Result<bool, Error> {
-        self.cmp(other).map(|v| v == Ordering::Equal)
+        match (self.deref(), other.deref()) {
+            (&MemData::Str(ref s), &MemData::Str(ref o)) =>
+                Ok(s == o),
+
+            _ => self.cmp(other).map(|v| v == Ordering::Equal),
+        }
     }
 
     pub fn convert(&self, typ: &Type) -> Result<Self, Error> {

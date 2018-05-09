@@ -4,7 +4,10 @@ use std::cell::{
     Ref,
     RefMut,
 };
-use std::rc::Rc;
+use std::rc::{
+    Rc,
+    Weak,
+};
 
 use super::{
     // ConstData,
@@ -31,7 +34,7 @@ pub struct Environment {
 
 struct EnvNode {
     parent: Option<Rc<RefCell<EnvNode>>>,
-    child:  Option<Rc<RefCell<EnvNode>>>,
+    child:  Option<Weak<RefCell<EnvNode>>>,
     frame:  Frame,
 }
 
@@ -62,22 +65,16 @@ impl Environment {
         }
     }
 
-    // pub fn get_frame(&self, i: usize) -> Result<Ref<Frame>, Error> {
-    //     self.frames.get(i).ok_or(Error::BadScopeIndex(i)).map(|f| f.borrow())
-    // }
+    pub fn append(&mut self, other: Environment) {
+        self.len += other.len;
 
-    // pub fn get_frame_mut(&mut self, i: usize) -> Result<RefMut<Frame>, Error> {
-    //     self.frames.get_mut(i).ok_or(Error::BadScopeIndex(i)).map(|f| f.borrow_mut())
-    // }
-    
-    // pub fn get_node(&self, i: usize) -> Result<Ref<EnvNode>, Error> {
-    //     if i >= self.len {
-    //         Err(Error::BadScopeIndex(i))
-    //     } else {
-    //         Ok(self.env_head.borrow().get_child_n(i).unwrap().borrow())
-    //     }
-    // }
-    pub fn define(&mut self, ident: IdentID, val: MemData) -> Result<(), Error> { 
+        let old_tail = ::std::mem::replace(&mut self.env_tail, other.env_tail);
+
+        other.env_head.borrow_mut().set_parent(Rc::clone(&old_tail));
+        old_tail.borrow_mut().set_child(other.env_head);
+    }
+
+    pub fn define(&mut self, ident: IdentID, val: MemData) -> Result<(), Error> {
         Ok(self.env_tail.borrow_mut().define(ident, val))
     }
 
@@ -157,7 +154,7 @@ impl Environment {
                          |r| Ok(MemData::Pointer(Rc::clone(r))))
     }
 
-    pub fn new_ident_id(&mut self, var_str: Option<String>) -> IdentID { 
+    pub fn new_ident_id(&mut self, var_str: Option<String>) -> IdentID {
         let id = self.max_id().unwrap_or(0) + 1;
         if let Some(s) = var_str {
             self.bind_var_string(s, id);
@@ -167,6 +164,10 @@ impl Environment {
 
     pub fn bind_var_string(&mut self, s: String, id: IdentID) {
         let _ = self.var_strings.borrow_mut().insert(s,  id);
+    }
+
+    pub fn get_ident(&self, s: &String) -> Option<IdentID> {
+        self.var_strings.borrow().get(s).map(|id| *id)
     }
 
     pub fn load_const(&mut self, val: MemData) -> usize {
@@ -185,6 +186,32 @@ impl Environment {
     }
 }
 
+impl ::std::fmt::Debug for Environment {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "Environment {{ head: {:x}, tail: {:x}, len: {} }}",
+               unsafe { 
+                   ::std::mem::transmute::<_, usize>(Rc::into_raw(self.env_head.clone())) 
+               },
+               unsafe {
+                   ::std::mem::transmute::<_, usize>(Rc::into_raw(self.env_tail.clone()))
+               },
+               self.len,
+               )
+    }
+}
+
+impl ::std::cmp::PartialEq for Environment {
+    fn eq(&self, other: &Self) -> bool {
+        self.len == other.len &&
+            Rc::ptr_eq(&self.env_tail, &other.env_tail) &&
+            Rc::ptr_eq(&self.env_head, &other.env_head) &&
+            Rc::ptr_eq(&self.consts,   &other.consts)   && 
+            Rc::ptr_eq(&self.var_strings, &other.var_strings)
+    }
+}
+
+impl ::std::cmp::Eq for Environment {}
+
 
 impl EnvNode {
     pub fn new() -> Self {
@@ -199,15 +226,18 @@ impl EnvNode {
         self.parent = Some(parent)
     }
 
-    fn set_child(&mut self, child: Rc<RefCell<EnvNode>>) { 
-        self.child = Some(child)
+    fn set_child(&mut self, child: Rc<RefCell<EnvNode>>) {
+        self.child = Some(Rc::downgrade(&child))
     }
 
     fn get_parent(&self) -> Option<&Rc<RefCell<EnvNode>>> {
         self.parent.as_ref()
     }
 
-    fn get_child(&self) -> Option<&Rc<RefCell<EnvNode>>> {
+    // fn get_child(&self) -> Option<&Rc<RefCell<EnvNode>>> {
+    //     self.child.as_ref().map(|c| c.upgrade().unwrap()).as_ref()
+    // }
+    fn get_child(&self) -> Option<&Weak<RefCell<EnvNode>>> {
         self.child.as_ref()
     }
 
@@ -219,7 +249,8 @@ impl EnvNode {
         if n == 0 {
             self.define(ident, val)
         } else {
-            self.child.as_ref().unwrap().borrow_mut().define_n(n-1, ident, val)
+            let c = self.child.as_ref().unwrap().upgrade().unwrap();
+            c.borrow_mut().define_n(n-1, ident, val);
         }
     }
 
@@ -239,13 +270,16 @@ impl EnvNode {
 
     fn max_id(&self, depth: usize) -> Option<IdentID> {
         if depth == 0 {
-            self.frame.max_id().map(|id| *id)
-        } else {
-            ::std::cmp::max(
-                self.frame.max_id().map(|id| *id),
-                self.child.as_ref().unwrap().borrow().max_id(depth-1)
-                )
+            return self.frame.max_id().map(|id| *id);
         }
+
+        let c = self.child.as_ref().map(|c| c.upgrade().unwrap()).unwrap();
+        let c = c.borrow();
+        ::std::cmp::max(
+            self.frame.max_id().map(|id| *id),
+            // self.child.as_ref().unwrap().upgrade().unwrap().borrow().max_id(depth-1)
+            c.max_id(depth-1)
+            )
     }
 
     // FIXME: this funcntion should return a reference and not perform any cloning
@@ -260,8 +294,10 @@ impl EnvNode {
     // FIXME: this funcntion should return a reference and not perform any cloning
     fn get_child_n(&self, n: usize) -> Option<Rc<RefCell<EnvNode>>> {
         let child = self.get_child();
-        if n == 0 { return child.map(|c| c.clone()); }
-        let child = child.unwrap().borrow();
+        // if n == 0 { return child.map(|c| c.clone()); }
+        if n == 0 { return child.map(|c| c.upgrade().unwrap()); }
+        let child = child.unwrap().upgrade().unwrap();
+        let child = child.borrow();
 
         child.get_child_n(n-1)
     }
@@ -279,7 +315,7 @@ impl EnvNode {
     }
 
     fn pop_child(&mut self) -> Option<Rc<RefCell<EnvNode>>> {
-        ::std::mem::replace(&mut self.child, None)
+        ::std::mem::replace(&mut self.child, None).map(|c| c.upgrade().unwrap())
     }
 
     fn get_frame(&self) -> &Frame {

@@ -20,6 +20,15 @@ use std::rc::Rc;
 //     rets: LinkedList<MemData>,
 // }
 
+
+bitflags! {
+    pub struct LoadOpts: u8 {
+        const OVERRIDE_VAR_STRINGS = 0b00000001;
+        const REUSE_VAR_STRINGS    = 0b00000010;
+        const DEFAULTS             = Self::OVERRIDE_VAR_STRINGS.bits;
+    }
+}
+
 pub struct Job {
     // mem: Rc<RefCell<Memory>>,
     env: Environment,
@@ -50,32 +59,43 @@ impl Job {
     }
 
     pub fn call(&mut self, id: &IdentID) -> Result<MemData, self::RuntimeError> {
-        // let mem = self.mem.clone();
+        let mut env = None;
+        let insts = (|| {
+            // FIXME: should be cloning here!!!
+            let v = self.env.get(&id)?;
+            Ok(match v.deref() {
+                &MemData::Proc(ref p) => p.clone(),
+                &MemData::Lambda(ref p, ref e) => {
+                    env = Some(e.clone());
+                    p.clone()
+                },
+                _ => Err(v.wrong_type(Type::Proc))?,
+            })
+        })().map_err(|e| self::RuntimeError {
+            error: e,
+            instruction: None,
+            instruction_num: None,
+        })?;
 
-        // FIXME: shouldn't be cloning here
-        // FIXME: shouldn't be unwrapping here
-        // let m = mem.borrow();
-        // let insts = m.get(id).unwrap()
-        let insts = self.env.get(id).unwrap()
-            .as_procedure().expect("Casting memdata as Procedure").clone();
-        // drop(m);
-
-        // mem.borrow_mut().push_scope();
         self.env.new_frame();
-        self.execute(&insts)?;
-        // mem.borrow_mut().pop_scope().unwrap();
-        self.env.pop_frame().unwrap();
+        trace!("Entering subjob!");
 
-        self.reg_stack.pop_back().ok_or(self::RuntimeError {
-            error: Error::IllegalRegisterPop,
+        self.execute(&insts, env)
+            .map_err(|e| { trace!("RUNTIME ERROR!"); e } )?;
+        (|| {
+            let r = self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?;
+            trace!("Done subjob!");
+            self.env.pop_frame().unwrap();
+
+            Ok(r)
+        })().map_err(|e| self::RuntimeError {
+            error: e,
             instruction: None,
             instruction_num: None,
         })
     }
 
     pub fn run_instruction(&mut self, inst: &Op) -> Result<(), Error> {
-        // let mem = self.mem.clone();
-
         if self.recording > 0 {
             self.recording -= 1;
             self.reg_stack.push_back(MemData::Inst(inst.clone()));
@@ -86,17 +106,10 @@ impl Job {
         debug!("{:?}", inst);
         debug!("{:?}\n", self.reg_stack);
         match inst.opcode {
-            // OpCode::PSS => { self.memory.inc_scope(1); },
-            // OpCode::PPS => { self.memory.dec_scope(1); },
-
-            // FIXME: PSS & PPS should push and pop scope with
-            // some id or something for scope
             OpCode::PSS => {
-                // mem.borrow_mut().push_scope(); // self.scope += 1;
                 self.env.new_frame();
             },
             OpCode::PPS => {
-                // mem.borrow_mut().pop_scope()?; // self.scope -= 1;
                 self.env.pop_frame()?;
             },
 
@@ -104,17 +117,20 @@ impl Job {
                 self.recording = inst.n.unwrap_or(1) as usize;
             },
 
-            // OpCode::DFN => {
-            OpCode::LMB => {
+            OpCode::LMB | OpCode::PRC => {
                 let n = inst.n.expect("getting quatifier");
                 let mut is: Vec<Op> = Vec::with_capacity(n as usize);
 
                 let n = self.reg_stack.len() - n as usize;
                 for v in self.reg_stack.split_off(n).into_iter() {
-                    is.push(v.into_instruction().map_err(|e| e.1)?);
+                    map_as!(v => Inst(i) => is.push(i))?;
                 }
 
-                self.reg_stack.push_back(MemData::Lambda(is.into()))
+                self.reg_stack.push_back(
+                    match inst.opcode {
+                        OpCode::LMB => MemData::Lambda(is.into(), self.env.clone()),
+                        OpCode::PRC | _ => MemData::Proc(is.into()),
+                    })
             },
             OpCode::DVR => {
                 let val = if let Some(val) = inst.val {
@@ -122,57 +138,38 @@ impl Job {
                 } else {
                     self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?
                 };
-                // let val = inst.val.map_or_else(
-                //     // | | Ok(self.reg_stack.pop_back().expect("popping from register stack")),
-                //     | | self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop),
-                //     // |v| Ok(mem.borrow().get_const(&v)?.clone()),
-                //     |v| Ok(self.env.get_const(&v)?.clone()),
-                //     )?;
-                // mem.borrow_mut().define(self.scope,
-                //                         inst.ident.expect("getting identifier"),
-                //                         val)?
-                // mem.borrow_mut().define(inst.ident.expect("getting identifier"), val)?
-                self.env.define(inst.ident.expect("getting identifier"), val)?
+                self.env.define(inst.ident.expect("getting identifier"), val)?; 
+
+                if ! inst.mute {
+                    self.reg_stack.push_back(self.env.get(&inst.ident.unwrap()).unwrap());
+                }
             },
             OpCode::LVR => {
-                // let s = self.scope;
-                // let m = mem.borrow();
                 self.reg_stack.push_back(
                     if let Some(val) = inst.val {
                         self.env.get_const(&val)?.clone()
                     } else {
                         self.env.get(&inst.ident.expect("getting ident"))?.clone()
                     })
-                // self.reg_stack.push_back(
-                //     inst.val.map_or_else(
-                //         | | Ok(self.env.get(&inst.ident.expect("getting ident"))?
-                //                 .clone()),
-                //         // |v| Ok(mem.borrow().get_const(&v)?.clone()),
-                //         |v| Ok(self.env.get_const(&v)?.clone()),
-                //         )?
-                //     )
             },
             OpCode::IFT | OpCode::IFE => {
                 // If-then | If-then-else
                 let cond = self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?;
+
                 let mut fals = None;
                 if let OpCode::IFE = inst.opcode {
-                    fals = Some(
-                        self.reg_stack
-                        .pop_back().ok_or(Error::IllegalRegisterPop)?
-                        .into_procedure().map_err(|e| e.1)?
-                        );
+                    let v = self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?;
+                    fals = Some(map_as!(*v.deref() => Proc(ref p) => p.clone())?);
                 }
-                let tru = self.reg_stack
-                    .pop_back().ok_or(Error::IllegalRegisterPop)?
-                    .into_procedure().map_err(|e| e.1)?;
 
-                // let sc = self.scope;
+                let v = self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?;
+                let tru = map_as!(*v.deref() => Proc(ref p) => p.clone())?;
+
                 if !cond.is_false() {
-                    self.execute(&tru)
+                    self.execute(&tru, None)
                         .map_err(|e| Error::RuntimeErrorInSubJob(Box::new(e)))?
                 } else if let OpCode::IFE = inst.opcode {
-                    self.execute(&fals.unwrap())
+                    self.execute(&fals.unwrap(), None)
                         .map_err(|e| Error::RuntimeErrorInSubJob(Box::new(e)))?
                 }
             },
@@ -199,38 +196,38 @@ impl Job {
                 // Cond NOT
             },
             OpCode::CLL => {
-                let len = self.reg_stack.len();
-                // let m = mem.borrow();
-                let insts: Procedure = if let Some(i) = inst.ident {
-                                // FIXME: should be cloning here!!!
-                                self.env.get(&i)?.as_procedure()?.clone()
-                            } else {
-                                let n = inst.n.expect("getting quantifier");
-                                let mut insts = Vec::with_capacity(n as usize);
-                                let n = len - n as usize;
-                                for v in self.reg_stack.split_off(n).into_iter() {
-                                    insts.push(v.into_instruction().map_err(|e| e.1)?)
-                                }
-                                insts.into()
-                            };
-                // drop(m);
+                let r = if let Some(i) = inst.ident {
+                    self.call(&i)
+                        .map_err(|e| Error::RuntimeErrorInSubJob(Box::new(e)))?
+                } else {
+                    // setup
+                    let len = self.reg_stack.len();
+                    let n = inst.n.expect("getting quantifier");
+                    let mut insts = Vec::with_capacity(n as usize);
 
-                self.env.new_frame();
-                trace!("Entering subjob!");
-                // let s = self.scope + 1;
-                self.execute(&insts)
-                    .map_err(|e| { trace!("RUNTIME ERROR!"); e } )
-                    .map_err(|e| Error::RuntimeErrorInSubJob(Box::new(e)))?;
-                let r = self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?;
-                trace!("Done subjob!");
-                self.env.pop_frame().unwrap();
+                    // prepare instrucitons list
+                    let n = len - n as usize;
+                    for v in self.reg_stack.split_off(n).into_iter() {
+                        map_as!(v => Inst(o) => insts.push(o) )?;
+                    }
+                    let insts = insts.into();
 
+                    // execute
+                    self.env.new_frame();
+                    trace!("Entering subjob!");
+                    self.execute(&insts, None)
+                        .map_err(|e| { trace!("RUNTIME ERROR!"); e } )
+                        .map_err(|e| Error::RuntimeErrorInSubJob(Box::new(e)))?;
+                    let r = self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?;
+                    trace!("Done subjob!");
+                    self.env.pop_frame().unwrap();
+
+                    r
+                };
                 self.reg_stack.push_back(r)
 
             },
             OpCode::CNV => {
-                // let s = self.scope;
-                // let m = mem.borrow();
                 let vals = if let Some(ident) = inst.ident {
                     let mut ll = LinkedList::new();
                     ll.push_back(self.env.get(&ident)?.clone());
@@ -243,14 +240,15 @@ impl Job {
                 for v in vals {
                     self.reg_stack.push_back(v?)
                 }
-                // self.reg_stack.extend(vals)
             },
             OpCode::CAT => {
                 let n = self.reg_stack.len() - inst.n.unwrap() as usize;
                 let vals = self.reg_stack.split_off(n);
                 let mut val = "".to_owned();
                 for v in vals {
-                    val = format!("{}{}", val, v.as_string()?)
+                    map_as!(*v.deref() => Str(ref s) => {
+                        val = format!("{}{}", val, s)
+                    })?;
                 }
                 self.reg_stack.push_back(MemData::Str(val))
             },
@@ -274,16 +272,12 @@ impl Job {
 
                 let mut r = LinkedList::new();
                 for v in vals.into_iter() {
-                    r.push_back(
-                        match inst.opcode {
-                            OpCode::CAR => {
-                                *v.into_pair().map_err(|e| e.1)?.0
-                            }
-                            OpCode::CDR | _ => {
-                                *v.into_pair().map_err(|e| e.1)?.1
-                            }
-                        }
-                        )
+                    map_as!(v => Pair { car, cdr } => 
+                            r.push_back(
+                                *match inst.opcode {
+                                    OpCode::CAR     => car,
+                                    OpCode::CDR | _ => cdr,
+                                }))?;
                 }
 
                 self.reg_stack.append(&mut r)
@@ -318,9 +312,10 @@ impl Job {
             OpCode::DSP => {
                 let a = self.reg_stack.pop_back().ok_or(Error::IllegalRegisterPop)?;
 
-                let a = a.as_string()?;
+                let a = map_as!(*a.deref() => Str(ref s) => s)?;
 
                 print!("{}", a);
+                trace!("DISPLAY: {}", a);
                 if ! inst.mute {
                     self.reg_stack.push_back(MemData::Nil);
                 }
@@ -332,13 +327,23 @@ impl Job {
 
     pub fn execute(
         &mut self,
-        insts: &Procedure) -> Result<(), err::RuntimeError> {
+        insts: &Procedure,
+        env: Option<Environment>) -> Result<(), err::RuntimeError> {
+
+        // BEGIN Env swapping
+        let mut old_env = None;
+        // let env = env.map(
+        //     |e| {
+        //         let mut ee = self.env.clone();
+        //         ee.append(e);
+        //         ee
+        //     });
+        if let Some(env) = env {
+            old_env = Some(::std::mem::replace(&mut self.env, env));
+        }
+        // END Env swapping
 
         let initial_len = self.reg_stack.len();
-        // let mut register_stack: LinkedList<MemData> = LinkedList::new();
-        // let mut scope: usize = scope;
-        // let old_scope = self.scope;
-        // self.scope = scope;
 
         for (i, inst) in insts.iter().enumerate() {
             self.run_instruction(&inst)
@@ -347,22 +352,21 @@ impl Job {
                     instruction_num: Some(i),
                     error: e
                 })?
-                // }).unwrap()
         }
 
-        // self.scope = old_scope;
+        // BEGIN Env restore
+        if let Some(old_env) = old_env {
+            let _ = ::std::mem::replace(&mut self.env, old_env);
+        }
+        // END Env restore
 
         debug!("final: {:?}", self.reg_stack);
-        // assert_eq!(self.reg_stack.len(), initial_len + 1);
-        // Ok(self.reg_stack.pop_back().unwrap())
         Ok(())
     }
 }
 
 impl VM {
     pub fn new() -> Self{
-        // let mem = Rc::new(RefCell::new(Memory::new()));
-        // let mem = Rc::new(RefCell::new(Environment::new()));
         let consts = Rc::new(RefCell::new(Vec::new()));
         let mem =  Environment::new(consts.clone());
 
@@ -375,28 +379,49 @@ impl VM {
     }
 
     // return IdentID of the function representing the bin
-    pub fn load(&mut self, bin: Bin) -> IdentID {
+    pub fn load(&mut self, bin: Bin, flags: LoadOpts) -> IdentID {
+        // early reserve our ident for proper offsets
+        let id = self.memory.new_ident_id(None);
+        self.memory.define(id, MemData::Nil).unwrap();
+
         let (mut insts, idents, mut var_strings, consts) = bin.unpack();
-        // let const_ofs = self.memory.borrow_mut().load_consts(consts);
         let const_ofs = {
             let o = self.memory.max_const_id().map_or(0, |i| i+1);
             consts.into_iter().for_each(|v| { self.memory.load_const(v); } );
             o
         };
 
-        // let (idents, _) = self.memory.borrow_mut().bind_idents(idents, var_strings);
+        let mut ii = self.memory.new_ident_id(None) - 1;
         let new_idents = idents.clone().into_iter().map(|i| {
-            self.memory.new_ident_id(var_strings.remove(&i))
+            ii+=1;
+            if flags.contains(LoadOpts::REUSE_VAR_STRINGS) {
+                if let Some(s) = var_strings.get(&i) {
+                    if let Some(id) = self.memory.get_ident(s) {
+                        trace!("Reusing id: {} with var_str: {}", id, s);
+                        id
+                    } else {
+                        trace!("Creating new var_str: {} with id: {}", s, id);
+                        self.memory.bind_var_string(s.to_owned(), i+ii);
+                        i+ii
+                    }
+                } else {
+                    i+ii
+                }
+            } else {
+                if let Some(s) = var_strings.get(&i) {
+                    trace!("Creating new var_str: {} with id: {}", s, id);
+                    self.memory.bind_var_string(s.to_owned(), i+ii);
+                }
+                i+ii
+            }
+            // self.memory.new_ident_id(var_strings.remove(&i))
         } ).collect();
 
         insts.apply_ident_swaps(idents, new_idents);
-
         insts.apply_const_offset(const_ofs);
-        // let id = self.memory.borrow_mut().bind_ident_id(None);
-        // self.memory.borrow_mut().define(id, MemData::Lambda(insts));
 
-        let id = self.memory.new_ident_id(None);
-        self.memory.define(id, MemData::Lambda(insts));
+        let env = self.memory.clone();
+        self.memory.define(id, MemData::Lambda(insts, env));
 
         id
     }

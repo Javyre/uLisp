@@ -50,7 +50,8 @@ fn prg0() {
                         (DSP)
                         (PPS)
                     }
-        });
+        },
+        vm::LoadOpts::OVERRIDE_VAR_STRINGS);
 
     assert!(lisp.call(&id).unwrap().eq(&MemData::Nil).unwrap());
 }
@@ -65,7 +66,8 @@ fn prg1() {
                     { }
                     { (#a = Int(9) )}
                     { (LVR #a) }
-        });
+        },
+        vm::LoadOpts::OVERRIDE_VAR_STRINGS);
 
     assert!(lisp.call(&id).unwrap().eq(&MemData::Int(9)).unwrap())
 }
@@ -104,7 +106,8 @@ fn prg2() {
                             (CLL cdar)
                         (ADD (2)) // #a + #c
                     }
-        });
+        },
+        vm::LoadOpts::OVERRIDE_VAR_STRINGS);
 
     assert!(lisp.call(&id).unwrap().eq(&MemData::Int(10)).unwrap());
 }
@@ -134,7 +137,8 @@ fn prg3() {
                                     (DSP &)
                                     (LVR #a)
                                 (PPS)
-                            (LMB (5))
+                            // (LMB (5))
+                            (PRC (5))
                             (REC (9))
                                 // BEGIN INNER IF
                                     (REC (5))
@@ -143,17 +147,104 @@ fn prg3() {
                                             (DSP &)
                                             (LVR #b)
                                         (PPS)
-                                    (LMB (5))
+                                    // (LMB (5))
+                                    (PRC (5))
                                     (LVR #t)
                                 (IFT)
                                 // END INNER IF
-                            (LMB (9))
+                            // (LMB (9))
+                            (PRC (9))
                                 (LVR #_one)
                                 (LVR #_two)
                             (CGT (2)) // greater than on 2 laxt vals
                         (IFE)
                     }
-        });
+        },
+        vm::LoadOpts::OVERRIDE_VAR_STRINGS);
 
     assert!(lisp.call(&id).unwrap().eq(&MemData::Int(321)).unwrap());
 }
+
+#[test]
+fn lambda() {
+    init_logger();
+
+    let mut lisp: vm::VM = vm::VM::new();
+    let id = lisp.load( 
+        program! {
+            { foo, bar }
+            { 
+                (#a = Str("Heyheyhey".to_string()))
+                (#b = Str("Yoyoyo".to_string()))
+
+                (#R = Int(123))
+            }
+            { 
+                /*
+                 *
+                 * (do
+                 *     (define bar
+                 *         (let (foo "HEYHEYHEY")
+                 *             (lambda () 
+                 *                 (do (display foo) foo))))
+                 *
+                 *     (define foo "yoyoyo")
+                 *     (bar))
+                 *
+                 * */
+
+                    (PSS)
+                        (DVR foo #a &)
+                        (REC (5))
+                            (PSS)
+                                    (LVR foo)
+                                (DSP &)
+                                (LVR foo)
+                            (PPS)
+                        (LMB (5))
+                    (PPS)
+                (DVR bar &)
+
+                (DVR foo #b &)
+                (CLL bar)
+            }
+        },
+        vm::LoadOpts::OVERRIDE_VAR_STRINGS);
+
+    assert!(lisp.call(&id).unwrap().eq(&MemData::Str("Heyheyhey".to_string())).unwrap());
+}
+
+#[test]
+fn multi_bin() {
+    init_logger();
+
+    let msg = "woop woop woop".to_string();
+
+    let mut lisp: vm::VM = vm::VM::new();
+    let id = lisp.load(
+        program! {
+            { foo }
+            { 
+                (#a = Str(msg.clone()))
+            }
+            { 
+                (DVR foo #a)
+            }
+        },
+        vm::LoadOpts::OVERRIDE_VAR_STRINGS);
+
+    let _ = lisp.call(&id).unwrap();
+
+    let id = lisp.load(
+        program! {
+            { foo }
+            { }
+            {
+                (LVR foo)
+            }
+        },
+        vm::LoadOpts::REUSE_VAR_STRINGS);
+
+    assert!(lisp.call(&id).unwrap().eq(&MemData::Str(msg)).unwrap());
+}
+

@@ -4,6 +4,9 @@ extern crate log;
 extern crate env_logger;
 
 #[macro_use]
+extern crate bitflags;
+
+#[macro_use]
 mod vm;
 
 #[cfg(test)]
@@ -67,7 +70,8 @@ fn main() {
                         (DSP)
                         (PPS)
                     }
-        });
+        },
+        vm::LoadOpts::OVERRIDE_VAR_STRINGS);
 
     let _ = lisp.call(&id).unwrap();
 }
